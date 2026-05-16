@@ -35,6 +35,11 @@ function formValue(form, name) {
   return String(new FormData(form).get(name) || "").trim();
 }
 
+function csvCell(value) {
+  const text = String(value ?? "").replace(/\r?\n/g, " ").replace(/"/g, '""');
+  return `"${text}"`;
+}
+
 const state = {
   route: "overview",
   installPrompt: null,
@@ -171,6 +176,45 @@ async function updateRequest(id, status) {
   } catch (error) {
     setNotice("error", error.message);
   }
+  render();
+}
+
+function exportRequestsForAmeen() {
+  if (!state.requests.length) {
+    setNotice("error", "لا توجد طلبات لتصديرها.");
+    render();
+    return;
+  }
+
+  const headers = [
+    "رقم الطلب",
+    "اسم العميل",
+    "القناة",
+    "نوع الطلب",
+    "الحالة",
+    "الملاحظة",
+    "تاريخ الإنشاء"
+  ];
+  const rows = state.requests.map((request) => [
+    request.publicId || request.id,
+    request.customer,
+    request.channel,
+    request.type,
+    request.status,
+    request.note,
+    request.createdAt || ""
+  ]);
+  const csv = [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
+  const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `tobacco-ameen-requests-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  setNotice("success", "تم تصدير ملف CSV قابل للفتح في Excel وتجهيزه كخطوة أولى للتوافق مع الأمين.");
   render();
 }
 
@@ -412,7 +456,11 @@ function requests() {
         </form>
       </article>
       <article class="panel">
-        <h3>سجل الطلبات</h3>
+        <div class="panel-title-row">
+          <h3>سجل الطلبات</h3>
+          <button class="button secondary compact-button" type="button" data-action="export-ameen">تصدير للأمين</button>
+        </div>
+        <p class="muted">يصدر الملف بصيغة CSV تفتح في Excel. عند معرفة قالب استيراد الأمين لديك نطابق الأعمدة معه بدقة.</p>
         <div class="request-list">
           ${state.requests.length ? state.requests.map(requestCard).join("") : loginPrompt || '<p class="muted">لا توجد طلبات بعد.</p>'}
         </div>
@@ -550,6 +598,7 @@ function render() {
 
   app.querySelector("[data-action='install']")?.addEventListener("click", installApp);
   app.querySelector("[data-action='logout']")?.addEventListener("click", logout);
+  app.querySelector("[data-action='export-ameen']")?.addEventListener("click", exportRequestsForAmeen);
 
   app.querySelector("[data-form='login']")?.addEventListener("submit", (event) => {
     event.preventDefault();

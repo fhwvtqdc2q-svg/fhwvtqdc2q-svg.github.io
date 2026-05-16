@@ -355,6 +355,23 @@ code {
   letter-spacing: 0;
 }
 
+.panel-title-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.panel-title-row h3 {
+  margin: 0;
+}
+
+.compact-button {
+  min-height: 36px;
+  padding: 0 12px;
+}
+
 .section-head {
   display: flex;
   justify-content: space-between;

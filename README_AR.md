@@ -1,12 +1,19 @@
 # TOBACCO Web
 
-منصة خدمة عملاء عربية تعمل من المتصفح على Windows وiPhone وMac. المشروع منشور على GitHub Pages ويمكن تثبيته من Safari كأنه تطبيق ويب.
+منصة خدمة عملاء عربية تعمل من المتصفح على Windows وiPhone وMac، ومتصلة بـ Supabase لحفظ الطلبات.
 
-الرابط العام:
+الرابط العام الحالي:
 
 ```text
-https://fhwvtqdc2q-svg.github.io/tobacco-web/
+https://fhwvtqdc2q-svg.github.io/
 ```
+
+## الحالة الحالية
+
+- تسجيل الدخول يعمل عبر Supabase.
+- جدول الطلبات `customer_requests` يعمل.
+- الطلبات تحفظ في قاعدة البيانات.
+- يمكن تصدير الطلبات بصيغة CSV لفتحها في Excel وتجهيزها للتوافق مع برنامج الأمين.
 
 ## التشغيل على Windows
 
@@ -21,40 +28,31 @@ npm run dev
 http://localhost:5173
 ```
 
-## الفتح على iPhone
+## الاستخدام على iPhone
 
 افتح الرابط العام من Safari:
 
 ```text
-https://fhwvtqdc2q-svg.github.io/tobacco-web/
+https://fhwvtqdc2q-svg.github.io/
 ```
 
 ثم اختر Share ثم Add to Home Screen.
 
-## ربط Supabase
+## التوافق مع Mac وiPhone
 
-المشروع جاهز للربط مع Supabase بدون وضع أسرار داخل GitHub.
+هذا المشروع يعمل كتطبيق ويب PWA على Safari. إذا أردنا لاحقا تطبيق iPhone أصلي على App Store، سنحتاج Xcode على Mac أو GitHub Actions macOS runner للبناء والتوقيع.
 
-اقرأ:
+## التوافق مع الأمين للمحاسبة
 
-```text
-SUPABASE_SETUP.md
-```
-
-ثم أضف Project URL والمفتاح العام فقط داخل:
-
-```text
-src/config.js
-```
-
-لا تضع مفتاح `service_role` في الواجهة.
+الخطوة الحالية هي تصدير الطلبات كملف CSV من صفحة طلبات العملاء. عند توفر قالب الاستيراد من برنامج الأمين، نطابق الأعمدة معه بدقة أو نبني موصل خاص.
 
 ## الملفات المهمة
 
 - `src/app.js`: الواجهة والمنطق.
-- `src/supabase-client.js`: طبقة البيانات بين الحفظ المحلي وSupabase.
-- `src/config.js`: إعدادات الموقع ومفاتيح Supabase العامة عند التفعيل.
+- `src/supabase-client.js`: طبقة Supabase.
+- `src/config.js`: إعدادات Supabase العامة.
 - `supabase/schema.sql`: جدول الطلبات وسياسات RLS.
+- `supabase/permissions-fix.sql`: إصلاح صلاحيات الطلبات عند الحاجة.
 - `.github/workflows/pages.yml`: نشر GitHub Pages.
 
 ## الفحص
