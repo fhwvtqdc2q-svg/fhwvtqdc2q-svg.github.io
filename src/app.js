@@ -367,10 +367,16 @@ function login() {
 }
 
 function requests() {
+  const loginPrompt =
+    dataStore.isConfigured() && !state.session
+      ? '<p class="muted">سجل الدخول أولا حتى تظهر طلبات Supabase وتستطيع إضافة طلب جديد.</p>'
+      : "";
+
   return shell(`
     <section class="content-grid request-layout">
       <article class="panel">
         <h3>إضافة طلب عميل</h3>
+        ${loginPrompt}
         <form class="form-card compact" data-form="request">
           <label>
             اسم العميل
@@ -404,7 +410,7 @@ function requests() {
       <article class="panel">
         <h3>سجل الطلبات</h3>
         <div class="request-list">
-          ${state.requests.length ? state.requests.map(requestCard).join("") : '<p class="muted">لا توجد طلبات بعد.</p>'}
+          ${state.requests.length ? state.requests.map(requestCard).join("") : loginPrompt || '<p class="muted">لا توجد طلبات بعد.</p>'}
         </div>
       </article>
     </section>

@@ -172,6 +172,9 @@
     async listRequests() {
       if (!client) return readJson(REQUESTS_KEY, defaultRequests);
 
+      const session = await getSupabaseSession();
+      if (!session) return [];
+
       const { data, error } = await client
         .from(tableName)
         .select("id, customer, channel, request_type, status, note, created_at, updated_at")
