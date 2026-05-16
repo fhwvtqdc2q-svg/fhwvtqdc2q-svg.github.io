@@ -7,8 +7,8 @@ window.appConfig = {
   language: "ar",
   paymentStatus: "واجهة جاهزة للربط",
   supabase: {
-    url: "",
-    publishableKey: "",
+    url: "https://dyxbirfpxeocqffnfdeb.supabase.co",
+    publishableKey: "sb_publishable_RkM_QDWxk8Yekqz9KBKXBw_Yl14zhSH",
     requestsTable: "customer_requests"
   }
 };
