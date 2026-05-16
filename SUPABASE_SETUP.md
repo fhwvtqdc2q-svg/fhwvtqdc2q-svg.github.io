@@ -45,6 +45,22 @@ supabase: {
 4. أضف طلب عميل من صفحة الطلبات.
 5. تأكد أن الطلب ظهر داخل جدول `customer_requests` في Supabase.
 
+## إذا ظهر permission denied
+
+إذا ظهرت رسالة:
+
+```text
+permission denied for table customer_requests
+```
+
+افتح SQL Editor وشغل محتوى:
+
+```text
+supabase/permissions-fix.sql
+```
+
+هذا الملف يعيد تثبيت صلاحيات `authenticated` وسياسات RLS بدون فتح الجدول للعامة.
+
 ## حالة الأمان الحالية
 
 - لا توجد مفاتيح سرية داخل المستودع.
