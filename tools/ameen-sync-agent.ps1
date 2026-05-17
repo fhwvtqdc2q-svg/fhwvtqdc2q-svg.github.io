@@ -62,6 +62,29 @@ function To-Number($Value) {
   return 0
 }
 
+function To-IsoDate($Value) {
+  if ($null -eq $Value -or $Value -eq "") {
+    return ""
+  }
+  return ([datetime]$Value).ToString("o")
+}
+
+function Read-JsonArray($Value) {
+  if ($null -eq $Value -or $Value -eq "") {
+    return @()
+  }
+
+  try {
+    $parsed = ConvertFrom-Json -InputObject ([string]$Value)
+    if ($null -eq $parsed) {
+      return @()
+    }
+    return @($parsed)
+  } catch {
+    return @()
+  }
+}
+
 function ConvertTo-JsonText($Value, $Depth = 10) {
   return ($Value | ConvertTo-Json -Depth $Depth)
 }
@@ -178,10 +201,29 @@ function Build-CustomerBalanceReport($Rows) {
     $creditLimit = To-Number $row.credit_limit
     $remainingLimit = To-Number $row.remaining_limit
     $lastPaymentAmount = To-Number $row.last_payment_amount
-    $lastPaymentDate = ""
-    if ($null -ne $row.last_payment_date -and $row.last_payment_date -ne "") {
-      $lastPaymentDate = ([datetime]$row.last_payment_date).ToString("o")
-    }
+    $lastPaymentDate = To-IsoDate $row.last_payment_date
+    $recentPayments = @(
+      Read-JsonArray $row.recent_payments_json | ForEach-Object {
+        [ordered]@{
+          amount = [math]::Round((To-Number $_.amount), 3)
+          date = To-IsoDate $_.date
+          notes = [string]$_.notes
+          number = [string]$_.number
+        }
+      }
+    )
+    $recentMovements = @(
+      Read-JsonArray $row.recent_movements_json | ForEach-Object {
+        [ordered]@{
+          debit = [math]::Round((To-Number $_.debit), 3)
+          credit = [math]::Round((To-Number $_.credit), 3)
+          date = To-IsoDate $_.date
+          notes = [string]$_.notes
+          number = [string]$_.number
+          type = [string]$_.type
+        }
+      }
+    )
     $status = "clear"
 
     if ($creditLimit -gt 0 -and $balance -gt $creditLimit) {
@@ -203,8 +245,11 @@ function Build-CustomerBalanceReport($Rows) {
       lastPaymentAmount = [math]::Round($lastPaymentAmount, 3)
       lastPaymentDate = $lastPaymentDate
       lastPaymentNotes = [string]$row.last_payment_notes
+      recentPayments = $recentPayments
+      recentMovements = $recentMovements
       status = $status
       customerGuid = [string]$row.customer_guid
+      customerAccountGuid = [string]$row.customer_account_guid
     }
   }
 

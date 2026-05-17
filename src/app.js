@@ -128,6 +128,7 @@ const state = {
   customerSearch: "",
   customerFilter: "debit_balance",
   customerSort: "balanceDesc",
+  selectedCustomerKey: "",
   loading: true,
   notice: null
 };
@@ -1160,6 +1161,8 @@ function applyCustomerLimits(items) {
       lastPaymentAmount: Number(item?.lastPaymentAmount || 0),
       lastPaymentDate: item?.lastPaymentDate || "",
       lastPaymentNotes: item?.lastPaymentNotes || "",
+      recentPayments: Array.isArray(item?.recentPayments) ? item.recentPayments : [],
+      recentMovements: Array.isArray(item?.recentMovements) ? item.recentMovements : [],
       status: deriveCustomerStatus(balance, effectiveLimit)
     };
   });
@@ -1181,6 +1184,29 @@ function customerBalanceTotals(items) {
     customersWithLimit: items.filter((item) => customerLimit(item) > 0).length,
     customersWithPayment: items.filter((item) => customerLastPaymentAmount(item) > 0).length
   };
+}
+
+function selectedCustomer(items) {
+  if (!state.selectedCustomerKey && items.length) {
+    return null;
+  }
+  return items.find((item) => customerKey(item) === state.selectedCustomerKey) || null;
+}
+
+function movementLabel(movement) {
+  const debit = Number(movement?.debit || 0);
+  const credit = Number(movement?.credit || 0);
+  if (credit > 0 && debit <= 0) return "دفعة";
+  if (debit > 0 && credit <= 0) return "فاتورة / دين";
+  return "قيد";
+}
+
+function movementAmount(movement) {
+  const debit = Number(movement?.debit || 0);
+  const credit = Number(movement?.credit || 0);
+  if (credit > 0 && debit <= 0) return credit;
+  if (debit > 0 && credit <= 0) return debit;
+  return Math.max(debit, credit);
 }
 
 function customerStatusLabel(status) {
@@ -1355,7 +1381,10 @@ function customerBalanceRow(item) {
   const key = customerKey(item);
   return `
     <div class="inventory-row inventory-row-${escapeHtml(rowState)}">
-      <strong>${escapeHtml(item.name)}</strong>
+      <div class="customer-row-title">
+        <strong>${escapeHtml(item.name)}</strong>
+        <button class="button secondary mini-button" type="button" data-customer-details="${escapeHtml(key)}">تفاصيل</button>
+      </div>
       <span>الرصيد: ${escapeHtml(formatMoney(customerBalance(item)))} / الحد: ${escapeHtml(limit > 0 ? formatMoney(limit) : "غير محدد")}</span>
       <span>المتبقي من الحد: ${escapeHtml(limit > 0 ? formatMoney(remaining) : "غير محدد")} / الحالة: ${escapeHtml(customerStatusLabel(item.status))} / المصدر: ${escapeHtml(customerLimitSourceLabel(item.limitSource))}</span>
       <span>آخر دفعة: ${escapeHtml(customerLastPaymentAmount(item) > 0 ? formatMoney(customerLastPaymentAmount(item)) : "غير متوفر")} / التاريخ: ${escapeHtml(customerLastPaymentDate(item) ? formatDate(customerLastPaymentDate(item)) : "غير متوفر")}</span>
@@ -1374,6 +1403,71 @@ function customerBalanceRow(item) {
   `;
 }
 
+function customerPaymentRow(payment) {
+  return `
+    <div class="detail-row">
+      <strong>${escapeHtml(formatMoney(payment?.amount || 0))}</strong>
+      <span>${escapeHtml(payment?.date ? formatDate(payment.date) : "غير متوفر")}</span>
+      <small>${escapeHtml(payment?.notes || "بلا ملاحظة")}</small>
+    </div>
+  `;
+}
+
+function customerMovementRow(movement) {
+  return `
+    <div class="detail-row">
+      <strong>${escapeHtml(movementLabel(movement))}: ${escapeHtml(formatMoney(movementAmount(movement)))}</strong>
+      <span>${escapeHtml(movement?.date ? formatDate(movement.date) : "غير متوفر")}</span>
+      <small>${escapeHtml(movement?.notes || "بلا ملاحظة")}</small>
+    </div>
+  `;
+}
+
+function customerDetailsPanel(item) {
+  if (!item) {
+    return `
+      <section class="customer-detail-panel" data-customer-detail-panel>
+        <p class="muted">اضغط زر تفاصيل بجانب أي زبون لعرض آخر الدفعات وكشف الحركة المختصر.</p>
+      </section>
+    `;
+  }
+
+  const payments = Array.isArray(item.recentPayments) ? item.recentPayments : [];
+  const movements = Array.isArray(item.recentMovements) ? item.recentMovements : [];
+
+  return `
+    <section class="customer-detail-panel" data-customer-detail-panel>
+      <div class="panel-title-row inventory-browser-head">
+        <div>
+          <h3>${escapeHtml(item.name)}</h3>
+          <p class="muted">تفاصيل الرصيد، الحد، آخر الدفعات، وكشف حركة مختصر من الأمين.</p>
+        </div>
+        <button class="button secondary compact-button" type="button" data-action="clear-customer-details">إغلاق التفاصيل</button>
+      </div>
+      <div class="inventory-metrics customer-detail-metrics">
+        ${inventoryMetric("الرصيد", formatMoney(customerBalance(item)), customerStatusLabel(item.status))}
+        ${inventoryMetric("الحد المسموح", customerLimit(item) > 0 ? formatMoney(customerLimit(item)) : "غير محدد", customerLimitSourceLabel(item.limitSource))}
+        ${inventoryMetric("المتبقي", customerLimit(item) > 0 ? formatMoney(customerRemainingLimit(item)) : "غير محدد", "من الحد الفعال")}
+        ${inventoryMetric("آخر دفعة", customerLastPaymentAmount(item) > 0 ? formatMoney(customerLastPaymentAmount(item)) : "غير متوفر", customerLastPaymentDate(item) ? formatDate(customerLastPaymentDate(item)) : "لا يوجد تاريخ")}
+      </div>
+      <div class="customer-detail-grid">
+        <article>
+          <h4>آخر الدفعات</h4>
+          <div class="detail-list">
+            ${payments.length ? payments.map(customerPaymentRow).join("") : '<p class="muted">لا توجد دفعات مسجلة لهذا الزبون.</p>'}
+          </div>
+        </article>
+        <article>
+          <h4>كشف حركة مختصر</h4>
+          <div class="detail-list">
+            ${movements.length ? movements.map(customerMovementRow).join("") : '<p class="muted">لا توجد حركة مختصرة لهذا الزبون.</p>'}
+          </div>
+        </article>
+      </div>
+    </section>
+  `;
+}
+
 function customerBalanceSection(report) {
   if (!report) {
     return `
@@ -1389,6 +1483,7 @@ function customerBalanceSection(report) {
   const counts = customerFilterCounts(items);
   const filtered = filteredCustomerItems(items);
   const totals = customerBalanceTotals(items);
+  const detailItem = selectedCustomer(items);
 
   return `
     <section class="panel wide customer-balances">
@@ -1444,6 +1539,7 @@ function customerBalanceSection(report) {
       <div class="button-row report-actions">
         <button class="button secondary" type="button" data-action="download-customer-balances" ${filtered.length ? "" : "disabled"}>تصدير أرصدة الزبائن</button>
       </div>
+      ${customerDetailsPanel(detailItem)}
       <div class="inventory-list inventory-list-dense customer-results" data-customer-results>
         ${filtered.length ? filtered.slice(0, 80).map(customerBalanceRow).join("") : '<p class="muted">لا توجد زبائن تطابق البحث والفلتر الحالي.</p>'}
       </div>
@@ -1684,6 +1780,7 @@ function updateCustomerBalanceResults() {
       ? filtered.slice(0, 80).map(customerBalanceRow).join("")
       : '<p class="muted">لا توجد زبائن تطابق البحث والفلتر الحالي.</p>';
     bindCustomerLimitForms(results);
+    bindCustomerDetailButtons(results);
   }
 
   if (count) {
@@ -1706,6 +1803,17 @@ function bindCustomerLimitForms(root = app) {
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       saveCustomerLimit(event.currentTarget);
+    });
+  });
+}
+
+function bindCustomerDetailButtons(root = app) {
+  root.querySelectorAll("[data-customer-details]").forEach((button) => {
+    if (button.dataset.bound === "true") return;
+    button.dataset.bound = "true";
+    button.addEventListener("click", () => {
+      state.selectedCustomerKey = button.dataset.customerDetails;
+      render();
     });
   });
 }
@@ -1742,6 +1850,10 @@ function render() {
   app.querySelector("[data-action='download-filtered-inventory']")?.addEventListener("click", downloadFilteredInventoryReport);
   app.querySelector("[data-action='download-customer-balances']")?.addEventListener("click", downloadFilteredCustomerBalances);
   app.querySelector("[data-action='refresh-ameen']")?.addEventListener("click", refreshAmeenReports);
+  app.querySelector("[data-action='clear-customer-details']")?.addEventListener("click", () => {
+    state.selectedCustomerKey = "";
+    render();
+  });
 
   app.querySelector("[data-ameen-search]")?.addEventListener("input", (event) => {
     state.ameenSearch = event.currentTarget.value;
@@ -1778,6 +1890,7 @@ function render() {
   });
 
   bindCustomerLimitForms();
+  bindCustomerDetailButtons();
 
   app.querySelector("[data-form='login']")?.addEventListener("submit", (event) => {
     event.preventDefault();
