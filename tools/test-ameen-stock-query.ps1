@@ -45,7 +45,7 @@ function Invoke-SqlDataTable($ConnectionString, $Query) {
     $adapter = New-Object System.Data.SqlClient.SqlDataAdapter $command
     $table = New-Object System.Data.DataTable
     [void]$adapter.Fill($table)
-    return $table
+    return ,$table
   } finally {
     if ($connection.State -eq "Open") {
       $connection.Close()
