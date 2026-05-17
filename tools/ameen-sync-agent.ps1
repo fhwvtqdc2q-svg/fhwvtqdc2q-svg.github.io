@@ -1,8 +1,11 @@
 param(
+  [Alias("nce")]
   [switch]$Once,
   [int]$IntervalSeconds = 60,
+  [Alias("owhreshold", "Threshold")]
   [int]$LowThreshold = 50,
-  [string]$StockQueryPath = ".\tools\ameen-stock-query.sql"
+  [string]$StockQueryPath = ".\tools\ameen-stock-query.sql",
+  [string]$LogPath = (Join-Path $PSScriptRoot "..\logs\ameen-sync.log")
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,6 +19,20 @@ function Require-Env($Name) {
     throw "Missing environment variable: $Name"
   }
   return $value
+}
+
+function Write-AgentLog($Message) {
+  $line = "{0} {1}" -f (Get-Date).ToString("yyyy-MM-dd HH:mm:ss"), $Message
+  Write-Host $line
+
+  if ($LogPath) {
+    $logDirectory = Split-Path -Parent $LogPath
+    if ($logDirectory -and -not (Test-Path -LiteralPath $logDirectory)) {
+      New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
+    }
+
+    Add-Content -LiteralPath $LogPath -Value $line
+  }
 }
 
 function Normalize-ItemName($Value) {
@@ -177,11 +194,19 @@ function Sync-Once {
   $session = Get-SupabaseSession -Url $supabaseUrl -ApiKey $supabaseKey -Email $syncEmail -Password $syncPassword
   Send-InventoryReport -SupabaseUrl $supabaseUrl -ApiKey $supabaseKey -Session $session -Report $report
 
-  Write-Host ("Synced {0} items. Low={1}, Out={2}, At={3}" -f $report.Items.Count, $report.Summary.lowStockItems, $report.Summary.outOfStockItems, (Get-Date))
+  Write-AgentLog ("Synced {0} items. Low={1}, Out={2}" -f $report.Items.Count, $report.Summary.lowStockItems, $report.Summary.outOfStockItems)
 }
 
 do {
-  Sync-Once
+  try {
+    Sync-Once
+  } catch {
+    Write-AgentLog ("Sync failed: {0}" -f $_.Exception.Message)
+    if ($Once) {
+      throw
+    }
+  }
+
   if ($Once) {
     break
   }

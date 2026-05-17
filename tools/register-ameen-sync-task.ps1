@@ -12,7 +12,8 @@ if (-not (Test-Path -LiteralPath $agentPath)) {
 }
 
 $powershellPath = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
-$arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$agentPath`" -Once -LowThreshold $LowThreshold"
+$logPath = Join-Path (Split-Path -Parent $PSScriptRoot) "logs\ameen-sync.log"
+$arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$agentPath`" -Once -LowThreshold $LowThreshold -LogPath `"$logPath`""
 
 $action = New-ScheduledTaskAction -Execute $powershellPath -Argument $arguments
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1)
@@ -34,3 +35,4 @@ Register-ScheduledTask `
 
 Write-Host "Scheduled task registered: $TaskName"
 Write-Host "It will run every $IntervalMinutes minute(s)."
+Write-Host "Log file: $logPath"
