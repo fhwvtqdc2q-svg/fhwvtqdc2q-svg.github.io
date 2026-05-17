@@ -60,7 +60,7 @@
       provider: "supabase",
       id: user.id,
       email: user.email || "",
-      name: user.user_metadata?.display_name || user.email || "موظف TOBACCO",
+      name: user.user_metadata?.display_name || user.email || "موظف OZK",
       role: user.user_metadata?.role || "خدمة العملاء"
     };
   }
@@ -135,7 +135,7 @@
       if (!client) {
         const session = {
           provider: "local",
-          name: cleanText(input.name, 80) || "موظف TOBACCO",
+          name: cleanText(input.name, 80) || "موظف OZK",
           role: cleanText(input.role, 40) || "خدمة العملاء"
         };
         writeJson(SESSION_KEY, session);

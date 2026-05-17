@@ -1,4 +1,4 @@
-const CACHE_NAME = "web-platform-tobacco-v8";
+const CACHE_NAME = "web-platform-tobacco-v9";
 const ASSETS = [
   "../index.html",
   "../404.html",
@@ -7,7 +7,8 @@ const ASSETS = [
   "../src/supabase-client.js",
   "../src/styles.css",
   "manifest.webmanifest",
-  "icons/app-icon.svg",
+  "icons/app-icon.png",
+  "icons/ozk-logo.png",
   "icons/workspace-pattern.svg"
 ];
 

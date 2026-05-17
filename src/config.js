@@ -1,5 +1,5 @@
 window.appConfig = {
-  name: "TOBACCO",
+  name: "OZK TOBACCO",
   supportEmail: "ozk.kh@outlook.com",
   tagline: "منصة خدمة عملاء وإدارة عن بعد",
   description:

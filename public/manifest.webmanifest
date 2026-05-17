@@ -1,17 +1,17 @@
 {
-  "name": "TOBACCO",
-  "short_name": "TOBACCO",
+  "name": "OZK TOBACCO",
+  "short_name": "OZK",
   "description": "منصة خدمة عملاء عربية تعمل على Windows وApple.",
   "start_url": "../index.html",
   "scope": "../",
   "display": "standalone",
-  "background_color": "#f6f8f7",
-  "theme_color": "#0f766e",
+  "background_color": "#080705",
+  "theme_color": "#080705",
   "icons": [
     {
-      "src": "icons/app-icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "icons/app-icon.png",
+      "sizes": "720x720",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]

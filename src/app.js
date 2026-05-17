@@ -596,7 +596,7 @@ function shell(content) {
     <div class="app-shell">
       <aside class="sidebar" aria-label="التنقل">
         <a class="brand" href="#" data-route="overview" aria-label="الرئيسية">
-          <img src="public/icons/app-icon.svg" alt="">
+          <img src="public/icons/ozk-logo.png" alt="">
           <span>${escapeHtml(appConfig.name)}</span>
         </a>
         <nav>
@@ -672,7 +672,7 @@ function navButton(route, label) {
 
 function pageTitle() {
   return {
-    overview: "لوحة TOBACCO",
+    overview: "لوحة OZK",
     login: "تسجيل الدخول",
     requests: "طلبات العملاء",
     ameen: "تقارير الأمين",
@@ -689,7 +689,7 @@ function overview() {
   return shell(`
     <section class="hero-panel business-hero">
       <div class="hero-copy">
-        <p class="eyebrow">TOBACCO</p>
+        <p class="eyebrow">OZK TOBACCO</p>
         <h2>منصة عربية لخدمة العملاء ومتابعة العمل عن بعد.</h2>
         <p>${escapeHtml(appConfig.description)}</p>
         <div class="metric-row">
