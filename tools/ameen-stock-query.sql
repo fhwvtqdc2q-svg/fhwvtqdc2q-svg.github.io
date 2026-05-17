@@ -1,16 +1,21 @@
--- Ameen live stock query template.
--- Replace this query after we identify the real Ameen database tables.
+-- Ameen live stock query for Al-Ameen 9 / AmnDb001.
+-- Read-only. It does not write anything inside Al-Ameen.
 --
--- The sync agent expects these columns:
---   item_name  : material name
---   stock_qty  : current stock quantity across the selected warehouses
---
--- Optional columns that can be added later:
---   last_sale_at
---   last_purchase_at
---   month_sold_qty
+-- Expected output for the sync agent:
+--   item_name : material name
+--   stock_qty : current stock quantity across warehouses
 
 select
-  cast(null as nvarchar(250)) as item_name,
-  cast(null as decimal(18, 3)) as stock_qty
-where 1 = 0;
+  mt.Name as item_name,
+  cast(coalesce(sum(ms.Qty), max(mt.Qty), 0) as decimal(18, 3)) as stock_qty
+from dbo.mt000 mt
+left join dbo.ms000 ms
+  on ms.MatGUID = mt.GUID
+where
+  mt.Name is not null
+  and ltrim(rtrim(mt.Name)) <> ''
+group by
+  mt.GUID,
+  mt.Name
+order by
+  mt.Name;
