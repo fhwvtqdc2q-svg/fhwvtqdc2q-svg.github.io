@@ -620,17 +620,96 @@ function downloadFilteredPriceList() {
     return;
   }
 
-  assertExcelSupport();
   if (!state.priceExport.rows.length) {
     setNotice("error", "لا توجد مواد بسعر صالح للتنزيل. ملف الأسعار الحالي يحتوي أسعارا صفرية أو فارغة للمواد المتوفرة.");
     render();
     return;
   }
-  const worksheet = window.XLSX.utils.aoa_to_sheet([state.priceExport.headers, ...state.priceExport.rows]);
+  writePriceExportWorkbook(state.priceExport, "tobacco-available-prices");
+  setNotice("success", "تم تنزيل لائحة أسعار تحتوي فقط المواد الموجودة في المستودع.");
+  render();
+}
+
+function liveAvailableItems() {
+  return reportItems(state.inventoryReports[0]).filter((item) => itemQty(item) > 0);
+}
+
+function writePriceExportWorkbook(priceExport, filePrefix) {
+  assertExcelSupport();
+  const worksheet = window.XLSX.utils.aoa_to_sheet([priceExport.headers, ...priceExport.rows]);
   const workbook = window.XLSX.utils.book_new();
   window.XLSX.utils.book_append_sheet(workbook, worksheet, "available-prices");
-  window.XLSX.writeFile(workbook, `tobacco-available-prices-${todayIsoDate()}.xlsx`);
-  setNotice("success", "تم تنزيل لائحة أسعار تحتوي فقط المواد الموجودة في المستودع.");
+  window.XLSX.writeFile(workbook, `${filePrefix}-${todayIsoDate()}.xlsx`);
+}
+
+function downloadLivePriceTemplate() {
+  const latest = state.inventoryReports[0];
+  const availableItems = liveAvailableItems();
+  if (!latest || !availableItems.length) {
+    setNotice("error", "لا يوجد جرد حي يحتوي مواد متوفرة لإنشاء قالب تسعير.");
+    render();
+    return;
+  }
+
+  assertExcelSupport();
+  const rows = availableItems.map((item) => [
+    item.name || "",
+    itemQty(item),
+    "",
+    statusLabel(item.status),
+    reportSyncedAt(latest)
+  ]);
+  const worksheet = window.XLSX.utils.aoa_to_sheet([
+    ["اسم المادة", "الكمية المتوفرة", "سعر البيع", "الحالة", "آخر مزامنة"],
+    ...rows
+  ]);
+  const workbook = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(workbook, worksheet, "price-template");
+  window.XLSX.writeFile(workbook, `tobacco-price-template-${todayIsoDate()}.xlsx`);
+  setNotice("success", `تم تنزيل قالب تسعير يحتوي ${availableItems.length} مادة متوفرة فقط.`);
+  render();
+}
+
+async function importLivePriceList(form) {
+  try {
+    const latest = state.inventoryReports[0];
+    const availableItems = liveAvailableItems();
+    const priceFile = form.elements.livePrice?.files?.[0];
+
+    if (!latest || !availableItems.length) {
+      throw new Error("لا يوجد جرد حي يحتوي مواد متوفرة للمطابقة.");
+    }
+    if (!priceFile) {
+      throw new Error("اختر ملف الأسعار بعد التسعير أولا.");
+    }
+
+    const price = await parsePriceWorkbook(priceFile);
+    const availableKeys = new Set(availableItems.map((item) => item.key || normalizeItemName(item.name)));
+    const filteredRows = price.rows.filter((row) => availableKeys.has(row.key) && row.hasPrice);
+    const excludedRows = price.rows.filter((row) => !availableKeys.has(row.key));
+    const zeroPriceRows = price.rows.filter((row) => availableKeys.has(row.key) && !row.hasPrice);
+
+    state.priceExport = {
+      sheetName: price.sheetName,
+      headers: price.headers,
+      rows: filteredRows.map((row) => row.raw),
+      source: "live_inventory",
+      excludedRows: excludedRows.length,
+      zeroPriceRows: zeroPriceRows.length
+    };
+
+    if (!filteredRows.length) {
+      throw new Error("ملف الأسعار لا يحتوي مواد متوفرة بسعر صالح. راجع عمود سعر البيع أو آخر مزامنة جرد.");
+    }
+
+    writePriceExportWorkbook(state.priceExport, "tobacco-sale-prices");
+    setNotice(
+      zeroPriceRows.length ? "error" : "success",
+      `تم تنزيل لائحة البيع النهائية: ${filteredRows.length} مادة. تم حذف ${excludedRows.length} غير موجودة في المستودع، و${zeroPriceRows.length} موجودة لكن بلا سعر.`
+    );
+  } catch (error) {
+    setNotice("error", error.message);
+  }
   render();
 }
 
@@ -1587,6 +1666,16 @@ function ameen() {
             <button class="button secondary" type="button" data-action="download-prices" ${state.priceExport ? "" : "disabled"}>تنزيل أسعار المتوفر فقط</button>
           </div>
         </form>
+        <form class="form-card compact" data-form="live-price-import">
+          <label>
+            ملف الأسعار بعد التسعير
+            <input name="livePrice" type="file" accept=".xlsx,.xls">
+          </label>
+          <div class="button-row">
+            <button class="button secondary" type="button" data-action="download-price-template" ${liveReport && summary.availableItems ? "" : "disabled"}>تنزيل قالب تسعير من الموقع</button>
+            <button class="button primary" type="submit" ${liveReport && summary.availableItems ? "" : "disabled"}>استيراد الأسعار وحذف غير الموجود</button>
+          </div>
+        </form>
       </article>
 
       <article class="panel">
@@ -1846,6 +1935,7 @@ function render() {
   app.querySelector("[data-action='logout']")?.addEventListener("click", logout);
   app.querySelector("[data-action='export-ameen']")?.addEventListener("click", exportRequestsForAmeen);
   app.querySelector("[data-action='download-prices']")?.addEventListener("click", downloadFilteredPriceList);
+  app.querySelector("[data-action='download-price-template']")?.addEventListener("click", downloadLivePriceTemplate);
   app.querySelector("[data-action='download-inventory']")?.addEventListener("click", downloadLatestInventoryReport);
   app.querySelector("[data-action='download-filtered-inventory']")?.addEventListener("click", downloadFilteredInventoryReport);
   app.querySelector("[data-action='download-customer-balances']")?.addEventListener("click", downloadFilteredCustomerBalances);
@@ -1905,6 +1995,11 @@ function render() {
   app.querySelector("[data-form='ameen-import']")?.addEventListener("submit", (event) => {
     event.preventDefault();
     importAmeenReport(event.currentTarget);
+  });
+
+  app.querySelector("[data-form='live-price-import']")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    importLivePriceList(event.currentTarget);
   });
 
   app.querySelectorAll("[data-request]").forEach((button) => {
