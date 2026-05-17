@@ -8,7 +8,7 @@
 2. من Authentication تأكد أن Email/Password مفعل.
 3. إذا كان النظام للموظفين فقط، عطّل التسجيل العام لاحقا وأنشئ المستخدمين من لوحة Supabase.
 
-## 2. أنشئ جدول الطلبات
+## 2. أنشئ جداول الطلبات وتقارير الأمين
 
 افتح SQL Editor داخل Supabase، ثم انسخ محتوى الملف:
 
@@ -16,7 +16,7 @@
 
 وشغله كما هو.
 
-الملف يفعل RLS ويمنع `anon` من قراءة الطلبات، ويسمح فقط للمستخدمين المسجلين بقراءة/إضافة/تحديث الطلبات.
+الملف يفعل RLS ويمنع `anon` من قراءة البيانات، ويسمح فقط للمستخدمين المسجلين بقراءة/إضافة/تحديث الطلبات وحفظ تقارير الجرد.
 
 ## 3. أضف مفاتيح الواجهة العامة
 
@@ -31,7 +31,8 @@
 supabase: {
   url: "https://YOUR-PROJECT.supabase.co",
   publishableKey: "YOUR-PUBLIC-KEY",
-  requestsTable: "customer_requests"
+  requestsTable: "customer_requests",
+  inventoryReportsTable: "inventory_reports"
 }
 ```
 
@@ -46,6 +47,8 @@ supabase: {
 5. سجل دخول بنفس البريد وكلمة المرور.
 6. أضف طلب عميل من صفحة الطلبات.
 7. تأكد أن الطلب ظهر داخل جدول `customer_requests` في Supabase.
+8. افتح صفحة `الأمين` وارفع ملف الجرد وملف الأسعار.
+9. تأكد أن تقريرا جديدا ظهر داخل جدول `inventory_reports`.
 
 إذا ظهر `auth session missing` فهذا يعني أن Supabase لا يرى جلسة دخول فعالة. أنشئ المستخدم من Supabase Authentication ثم سجل دخول من الموقع.
 
@@ -57,6 +60,12 @@ supabase: {
 
 ```text
 permission denied for table customer_requests
+```
+
+أو:
+
+```text
+permission denied for table inventory_reports
 ```
 
 افتح SQL Editor وشغل محتوى:

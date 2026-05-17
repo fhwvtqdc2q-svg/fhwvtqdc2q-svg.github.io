@@ -145,6 +145,11 @@ code {
   color: var(--ink);
 }
 
+.button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .button-row {
   display: flex;
   flex-wrap: wrap;
@@ -682,6 +687,52 @@ code {
   gap: 6px;
 }
 
+.inventory-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.inventory-metric {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.inventory-metric span,
+.inventory-metric small {
+  color: var(--muted);
+}
+
+.inventory-metric strong {
+  font-size: 1.7rem;
+}
+
+.inventory-list {
+  display: grid;
+  gap: 10px;
+}
+
+.inventory-row {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.inventory-row span {
+  color: var(--muted);
+}
+
+.ameen-movement {
+  margin-top: 18px;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -705,6 +756,7 @@ code {
   .form-layout,
   .request-layout,
   .service-grid,
+  .inventory-metrics,
   .status-board,
   .status-board.full {
     grid-template-columns: 1fr;

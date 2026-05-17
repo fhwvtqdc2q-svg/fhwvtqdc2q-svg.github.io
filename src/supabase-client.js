@@ -1,6 +1,7 @@
 (function () {
   const SESSION_KEY = "tobacco-session";
   const REQUESTS_KEY = "tobacco-requests";
+  const INVENTORY_REPORTS_KEY = "tobacco-inventory-reports";
 
   const defaultRequests = [
     {
@@ -39,6 +40,7 @@
   const hasConfig = Boolean(config.url && config.publishableKey);
   const hasLibrary = Boolean(window.supabase?.createClient);
   const tableName = config.requestsTable || "customer_requests";
+  const inventoryReportsTable = config.inventoryReportsTable || "inventory_reports";
   const client =
     hasConfig && hasLibrary
       ? window.supabase.createClient(config.url, config.publishableKey, {
@@ -253,6 +255,55 @@
         .eq("id", id);
 
       if (error) throw new Error(error.message);
+    },
+
+    async listInventoryReports() {
+      if (!client) return readJson(INVENTORY_REPORTS_KEY, []);
+
+      const session = await getSupabaseSession();
+      if (!session) return [];
+
+      const { data, error } = await client
+        .from(inventoryReportsTable)
+        .select("id, report_date, source, summary, items, created_at")
+        .order("created_at", { ascending: false })
+        .limit(12);
+
+      if (error) throw new Error(error.message);
+      return data || [];
+    },
+
+    async createInventoryReport(report) {
+      const localReport = {
+        id: report.id || `local-${Date.now()}`,
+        report_date: report.reportDate,
+        source: report.source || "ameen_excel",
+        summary: report.summary || {},
+        items: report.items || [],
+        created_at: new Date().toISOString()
+      };
+
+      if (!client) {
+        const reports = [localReport, ...readJson(INVENTORY_REPORTS_KEY, [])].slice(0, 12);
+        writeJson(INVENTORY_REPORTS_KEY, reports);
+        return localReport;
+      }
+
+      const user = await requireUser();
+      const { data, error } = await client
+        .from(inventoryReportsTable)
+        .insert({
+          report_date: localReport.report_date,
+          source: localReport.source,
+          summary: localReport.summary,
+          items: localReport.items,
+          created_by: user.id
+        })
+        .select("id, report_date, source, summary, items, created_at")
+        .single();
+
+      if (error) throw new Error(error.message);
+      return data;
     }
   };
 

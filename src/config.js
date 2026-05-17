@@ -9,7 +9,8 @@ window.appConfig = {
   supabase: {
     url: "https://dyxbirfpxeocqffnfdeb.supabase.co",
     publishableKey: "sb_publishable_RkM_QDWxk8Yekqz9KBKXBw_Yl14zhSH",
-    requestsTable: "customer_requests"
+    requestsTable: "customer_requests",
+    inventoryReportsTable: "inventory_reports"
   }
 };
 
@@ -43,6 +44,11 @@ window.roadmapItems = [
     id: "hosting",
     title: "النشر",
     detail: "منشور الآن على GitHub Pages، ويمكن نقله لاحقا إلى خادم سحابي أو منصة استضافة."
+  },
+  {
+    id: "ameen",
+    title: "تقارير الأمين",
+    detail: "رفع جرد الأمين ولائحة الأسعار لإظهار تنبيهات قريب النفاد والمواد الراكدة والفعالة من الهاتف."
   }
 ];
 

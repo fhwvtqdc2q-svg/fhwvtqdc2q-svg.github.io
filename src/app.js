@@ -40,12 +40,42 @@ function csvCell(value) {
   return `"${text}"`;
 }
 
+function normalizeItemName(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/^\d{2,}\s*[-–—]\s*/u, "")
+    .replace(/[ـًٌٍَُِّْ]/gu, "")
+    .replace(/[إأآٱ]/gu, "ا")
+    .replace(/ى/gu, "ي")
+    .replace(/ة/gu, "ه")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function toNumber(value) {
+  const text = String(value ?? "")
+    .replace(/,/g, "")
+    .replace(/[^\d.-]/g, "")
+    .trim();
+  if (!text) return 0;
+  const number = Number(text);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 const state = {
   route: "overview",
   installPrompt: null,
   completed: new Set(readJson("completed-items", [])),
   session: null,
   requests: [],
+  inventoryReports: [],
+  priceExport: null,
   loading: true,
   notice: null
 };
@@ -71,6 +101,7 @@ function setNotice(type, text) {
 async function boot() {
   await refreshSession();
   await loadRequests();
+  await loadInventoryReports();
   state.loading = false;
   render();
 }
@@ -94,6 +125,18 @@ async function loadRequests() {
   } catch (error) {
     state.requests = dataStore.defaultRequests;
     setNotice("error", `تعذر تحميل الطلبات: ${error.message}`);
+  }
+}
+
+async function loadInventoryReports() {
+  try {
+    if (dataStore.isConfigured() && !state.session) {
+      state.inventoryReports = [];
+      return;
+    }
+    state.inventoryReports = await dataStore.listInventoryReports();
+  } catch {
+    state.inventoryReports = [];
   }
 }
 
@@ -132,6 +175,7 @@ async function saveSession(form, action) {
     }
 
     await loadRequests();
+    await loadInventoryReports();
     setRoute("overview", false);
   } catch (error) {
     setNotice("error", error.message);
@@ -143,6 +187,7 @@ async function logout() {
   try {
     await dataStore.signOut();
     state.session = null;
+    state.inventoryReports = [];
     setNotice("success", "تم تسجيل الخروج.");
   } catch (error) {
     setNotice("error", error.message);
@@ -218,6 +263,235 @@ function exportRequestsForAmeen() {
   render();
 }
 
+function assertExcelSupport() {
+  if (!window.XLSX) {
+    throw new Error("مكتبة قراءة Excel لم تتحمل بعد. حدث الصفحة ثم جرب مرة أخرى.");
+  }
+}
+
+async function readWorkbookFile(file) {
+  assertExcelSupport();
+  const buffer = await file.arrayBuffer();
+  return window.XLSX.read(buffer, { type: "array", cellDates: true });
+}
+
+function sheetRows(workbook, preferredNames = []) {
+  const sheetName =
+    workbook.SheetNames.find((name) => preferredNames.some((preferred) => name.includes(preferred))) ||
+    workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
+  return {
+    sheetName,
+    rows: window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" })
+  };
+}
+
+function findHeaderRow(rows) {
+  const index = rows.findIndex((row) =>
+    row.some((cell) => String(cell).trim().includes("اسم المادة") || String(cell).trim() === "المادة")
+  );
+  if (index === -1) throw new Error("لم أجد عمود اسم المادة داخل ملف Excel.");
+  return index;
+}
+
+function findColumn(header, candidates) {
+  return header.findIndex((cell) => {
+    const text = String(cell ?? "").trim();
+    return candidates.some((candidate) => text.includes(candidate));
+  });
+}
+
+function aggregateStockItems(rows, headerIndex, threshold) {
+  const header = rows[headerIndex].map((cell) => String(cell ?? "").trim());
+  const itemIndex = findColumn(header, ["اسم المادة", "المادة", "الصنف"]);
+  const totalIndex = findColumn(header, ["الكمية الإجمالية", "الكمية الاجمالية", "إجمالي", "اجمالي"]);
+
+  if (itemIndex < 0) throw new Error("ملف الجرد لا يحتوي على عمود اسم المادة.");
+  const itemsByKey = new Map();
+
+  rows.slice(headerIndex + 1).forEach((row) => {
+    const name = String(row[itemIndex] ?? "").trim();
+    const key = normalizeItemName(name);
+    if (!name || !key || key === normalizeItemName("اسم المادة")) return;
+
+    const qty =
+      totalIndex >= 0
+        ? toNumber(row[totalIndex])
+        : row.reduce((sum, cell, index) => (index === itemIndex ? sum : sum + toNumber(cell)), 0);
+
+    const current = itemsByKey.get(key);
+    if (current) {
+      current.stockQty += qty;
+    } else {
+      itemsByKey.set(key, {
+        key,
+        name,
+        stockQty: qty,
+        status: "active",
+        priceListed: false,
+        lowThreshold: threshold
+      });
+    }
+  });
+
+  return [...itemsByKey.values()];
+}
+
+async function parseStockWorkbook(file, threshold) {
+  const workbook = await readWorkbookFile(file);
+  const { sheetName, rows } = sheetRows(workbook, ["جرد", "مخزون"]);
+  const headerIndex = findHeaderRow(rows);
+  const items = aggregateStockItems(rows, headerIndex, threshold);
+  if (!items.length) throw new Error("ملف الجرد لا يحتوي على مواد قابلة للقراءة.");
+  return { sheetName, items };
+}
+
+async function parsePriceWorkbook(file) {
+  const workbook = await readWorkbookFile(file);
+  const { sheetName, rows } = sheetRows(workbook, ["لائحة", "اسعار", "أسعار"]);
+  const headerIndex = findHeaderRow(rows);
+  const headers = rows[headerIndex].map((cell) => String(cell ?? "").trim());
+  const itemIndex = findColumn(headers, ["اسم المادة", "المادة", "الصنف"]);
+  if (itemIndex < 0) throw new Error("ملف الأسعار لا يحتوي على عمود اسم المادة.");
+
+  const priceRows = rows
+    .slice(headerIndex + 1)
+    .filter((row) => normalizeItemName(row[itemIndex]))
+    .map((row) => ({
+      key: normalizeItemName(row[itemIndex]),
+      name: String(row[itemIndex] ?? "").trim(),
+      raw: headers.map((_, index) => row[index] ?? "")
+    }));
+
+  if (!priceRows.length) throw new Error("ملف الأسعار لا يحتوي على مواد قابلة للقراءة.");
+  return { sheetName, headers, rows: priceRows };
+}
+
+function movementSummary(currentItems, previousReport) {
+  const previousItems = Array.isArray(previousReport?.items) ? previousReport.items : [];
+  const previousMap = new Map(
+    previousItems.map((item) => [item.key || normalizeItemName(item.name), Number(item.stockQty || 0)])
+  );
+
+  let activeMovement = 0;
+  let staleMovement = 0;
+  let restocked = 0;
+
+  currentItems.forEach((item) => {
+    if (!previousMap.has(item.key)) return;
+    const previousQty = previousMap.get(item.key);
+    const delta = Number(item.stockQty || 0) - previousQty;
+    if (delta < 0) activeMovement += 1;
+    if (delta === 0 && item.stockQty > 0) staleMovement += 1;
+    if (delta > 0) restocked += 1;
+  });
+
+  return {
+    activeMovement,
+    staleMovement,
+    restocked,
+    previousReportDate: previousReport?.report_date || previousReport?.summary?.reportDate || ""
+  };
+}
+
+function classifyInventoryItems(stockItems, priceRows, threshold) {
+  const priceKeys = new Set((priceRows || []).map((row) => row.key));
+
+  return stockItems.map((item) => {
+    const priceListed = priceKeys.has(item.key);
+    let status = "active";
+    if (item.stockQty <= 0) status = "out";
+    else if (item.stockQty <= threshold) status = "low";
+    else if (priceRows && !priceListed) status = "stale";
+
+    return {
+      ...item,
+      stockQty: Number(item.stockQty.toFixed(3)),
+      status,
+      priceListed
+    };
+  });
+}
+
+async function buildInventoryReport(stockFile, priceFile, threshold, previousReport) {
+  const stock = await parseStockWorkbook(stockFile, threshold);
+  const price = priceFile ? await parsePriceWorkbook(priceFile) : null;
+  const availableKeys = new Set(stock.items.filter((item) => item.stockQty > 0).map((item) => item.key));
+  const filteredPriceRows = price ? price.rows.filter((row) => availableKeys.has(row.key)) : [];
+  const excludedPriceRows = price ? price.rows.filter((row) => !availableKeys.has(row.key)) : [];
+  const items = classifyInventoryItems(stock.items, price?.rows, threshold);
+  const movement = movementSummary(items, previousReport);
+  const summary = {
+    reportDate: todayIsoDate(),
+    stockFileName: stockFile.name,
+    priceFileName: priceFile?.name || "",
+    totalStockItems: items.length,
+    availableItems: items.filter((item) => item.stockQty > 0).length,
+    lowStockItems: items.filter((item) => item.status === "low").length,
+    outOfStockItems: items.filter((item) => item.status === "out").length,
+    staleItems: items.filter((item) => item.status === "stale").length,
+    activeItems: items.filter((item) => item.status === "active").length,
+    priceRows: price?.rows.length || 0,
+    exportedPriceRows: filteredPriceRows.length,
+    excludedPriceRows: excludedPriceRows.length,
+    threshold,
+    ...movement
+  };
+
+  return {
+    reportDate: summary.reportDate,
+    source: "ameen_excel",
+    summary,
+    items,
+    priceExport: price
+      ? {
+          sheetName: price.sheetName,
+          headers: price.headers,
+          rows: filteredPriceRows.map((row) => row.raw)
+        }
+      : null
+  };
+}
+
+async function importAmeenReport(form) {
+  try {
+    const stockFile = form.elements.stock?.files?.[0];
+    const priceFile = form.elements.price?.files?.[0] || null;
+    const threshold = Math.max(0, toNumber(form.elements.lowThreshold?.value || 50));
+
+    if (!stockFile) throw new Error("اختر ملف جرد الأمين أولا.");
+    const report = await buildInventoryReport(stockFile, priceFile, threshold, state.inventoryReports[0]);
+    state.priceExport = report.priceExport;
+    await dataStore.createInventoryReport(report);
+    await loadInventoryReports();
+
+    setNotice(
+      "success",
+      `تم حفظ تقرير الأمين. المواد القريبة من النفاد: ${report.summary.lowStockItems}، والمواد المستبعدة من لائحة الأسعار: ${report.summary.excludedPriceRows}.`
+    );
+    setRoute("ameen", false);
+  } catch (error) {
+    setNotice("error", error.message);
+    render();
+  }
+}
+
+function downloadFilteredPriceList() {
+  if (!state.priceExport) {
+    setNotice("error", "حلل ملف الأسعار أولا حتى أجهز نسخة المواد المتوفرة فقط.");
+    render();
+    return;
+  }
+
+  assertExcelSupport();
+  const worksheet = window.XLSX.utils.aoa_to_sheet([state.priceExport.headers, ...state.priceExport.rows]);
+  const workbook = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(workbook, worksheet, "available-prices");
+  window.XLSX.writeFile(workbook, `tobacco-available-prices-${todayIsoDate()}.xlsx`);
+  setNotice("success", "تم تنزيل لائحة أسعار تحتوي فقط المواد الموجودة في المستودع.");
+  render();
+}
+
 async function installApp() {
   if (!state.installPrompt) return;
   state.installPrompt.prompt();
@@ -242,6 +516,7 @@ function shell(content) {
           ${navButton("overview", "الرئيسية")}
           ${navButton("login", "تسجيل الدخول")}
           ${navButton("requests", "طلبات العملاء")}
+          ${navButton("ameen", "الأمين")}
           ${navButton("remote", "إدارة عن بعد")}
           ${navButton("monitoring", "المراقبة")}
           ${navButton("payments", "الدفع")}
@@ -313,6 +588,7 @@ function pageTitle() {
     overview: "لوحة TOBACCO",
     login: "تسجيل الدخول",
     requests: "طلبات العملاء",
+    ameen: "تقارير الأمين",
     remote: "الإدارة عن بعد",
     monitoring: "المراقبة",
     payments: "الدفع"
@@ -469,6 +745,132 @@ function requests() {
   `);
 }
 
+function reportItems(report) {
+  return Array.isArray(report?.items) ? report.items : [];
+}
+
+function statusLabel(status) {
+  return {
+    active: "فعالة",
+    low: "قريبة من النفاد",
+    out: "غير موجودة",
+    stale: "راكدة"
+  }[status] || status;
+}
+
+function inventoryMetric(label, value, detail = "") {
+  return `
+    <article class="inventory-metric">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      ${detail ? `<small>${escapeHtml(detail)}</small>` : ""}
+    </article>
+  `;
+}
+
+function inventoryList(title, items, emptyText) {
+  return `
+    <article class="panel">
+      <h3>${escapeHtml(title)}</h3>
+      <div class="inventory-list">
+        ${
+          items.length
+            ? items
+                .slice(0, 12)
+                .map(
+                  (item) => `
+                    <div class="inventory-row">
+                      <strong>${escapeHtml(item.name)}</strong>
+                      <span>${escapeHtml(statusLabel(item.status))} / الكمية: ${escapeHtml(item.stockQty)}</span>
+                    </div>
+                  `
+                )
+                .join("")
+            : `<p class="muted">${escapeHtml(emptyText)}</p>`
+        }
+      </div>
+    </article>
+  `;
+}
+
+function ameen() {
+  const latest = state.inventoryReports[0];
+  const summary = latest?.summary || {};
+  const items = reportItems(latest);
+  const lowItems = items
+    .filter((item) => item.status === "low" || item.status === "out")
+    .sort((a, b) => Number(a.stockQty || 0) - Number(b.stockQty || 0));
+  const staleItems = items.filter((item) => item.status === "stale");
+  const activeItems = items.filter((item) => item.status === "active");
+  const authHint =
+    dataStore.isConfigured() && !state.session
+      ? '<p class="muted">سجل الدخول حتى يتم حفظ التقرير في Supabase ويظهر على الآيفون عند فتح الموقع.</p>'
+      : "";
+
+  return shell(`
+    <section class="content-grid request-layout">
+      <article class="panel">
+        <h3>رفع تقرير الأمين</h3>
+        ${authHint}
+        <p class="muted">اختر ملف الجرد التجميعي من الأمين، ثم اختر لائحة الأسعار اليومية. سأحفظ الملخص وأجهز نسخة أسعار تحتوي فقط المواد الموجودة في المستودع.</p>
+        <form class="form-card compact" data-form="ameen-import">
+          <label>
+            ملف جرد الأمين
+            <input name="stock" type="file" accept=".xlsx,.xls" required>
+          </label>
+          <label>
+            ملف لائحة الأسعار اليومية
+            <input name="price" type="file" accept=".xlsx,.xls">
+          </label>
+          <label>
+            حد تنبيه قرب النفاد
+            <input name="lowThreshold" type="number" min="0" step="1" value="${escapeHtml(summary.threshold || 50)}">
+          </label>
+          <div class="button-row">
+            <button class="button primary" type="submit">تحليل وحفظ التقرير</button>
+            <button class="button secondary" type="button" data-action="download-prices" ${state.priceExport ? "" : "disabled"}>تنزيل أسعار المتوفر فقط</button>
+          </div>
+        </form>
+      </article>
+
+      <article class="panel">
+        <h3>ملخص الهاتف</h3>
+        ${
+          latest
+            ? `<p class="muted">آخر تقرير محفوظ: ${escapeHtml(summary.reportDate || latest.report_date || latest.created_at || "")}</p>
+              <div class="inventory-metrics">
+                ${inventoryMetric("مواد موجودة", summary.availableItems || 0, "من الجرد")}
+                ${inventoryMetric("قريبة من النفاد", summary.lowStockItems || 0, `حد التنبيه: ${summary.threshold || 0}`)}
+                ${inventoryMetric("غير موجودة", summary.outOfStockItems || 0, "لا تنزل في الأسعار")}
+                ${inventoryMetric("راكدة", summary.staleItems || 0, "موجودة ولا تظهر في الأسعار")}
+                ${inventoryMetric("فعالة", summary.activeItems || 0, "موجودة وتظهر في الأسعار")}
+                ${inventoryMetric("استبعاد أسعار", summary.excludedPriceRows || 0, "غير موجودة في المستودع")}
+              </div>`
+            : '<p class="muted">لم تحفظ تقرير جرد بعد. ارفع ملف الجرد اليومي حتى يظهر الملخص هنا وعلى الآيفون.</p>'
+        }
+      </article>
+    </section>
+
+    ${
+      latest
+        ? `<section class="content-grid">
+            ${inventoryList("تنبيهات قرب النفاد", lowItems, "لا توجد مواد قريبة من النفاد حسب الحد الحالي.")}
+            ${inventoryList("مواد راكدة", staleItems, "لا توجد مواد راكدة من هذه المقارنة.")}
+          </section>
+          <section class="panel wide ameen-movement">
+            <h3>حركة المواد والمقارنة</h3>
+            <div class="inventory-metrics">
+              ${inventoryMetric("تحركت", summary.activeMovement || 0, "انخفضت كميتها عن التقرير السابق")}
+              ${inventoryMetric("بلا حركة", summary.staleMovement || 0, "نفس الكمية في تقريرين")}
+              ${inventoryMetric("تم تزويدها", summary.restocked || 0, "زادت كميتها عن التقرير السابق")}
+              ${inventoryMetric("المقارنة السابقة", summary.previousReportDate || "لا يوجد", "تحتاج تقريرين أو أكثر")}
+            </div>
+          </section>`
+        : ""
+    }
+  `);
+}
+
 function remote() {
   return shell(`
     <section class="panel wide">
@@ -578,6 +980,7 @@ function render() {
     overview,
     login,
     requests,
+    ameen,
     remote,
     monitoring,
     payments
@@ -599,6 +1002,7 @@ function render() {
   app.querySelector("[data-action='install']")?.addEventListener("click", installApp);
   app.querySelector("[data-action='logout']")?.addEventListener("click", logout);
   app.querySelector("[data-action='export-ameen']")?.addEventListener("click", exportRequestsForAmeen);
+  app.querySelector("[data-action='download-prices']")?.addEventListener("click", downloadFilteredPriceList);
 
   app.querySelector("[data-form='login']")?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -608,6 +1012,11 @@ function render() {
   app.querySelector("[data-form='request']")?.addEventListener("submit", (event) => {
     event.preventDefault();
     addRequest(event.currentTarget);
+  });
+
+  app.querySelector("[data-form='ameen-import']")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    importAmeenReport(event.currentTarget);
   });
 
   app.querySelectorAll("[data-request]").forEach((button) => {
