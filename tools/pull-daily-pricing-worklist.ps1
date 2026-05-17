@@ -91,7 +91,7 @@ function Write-WorklistCsv($Rows, $Path) {
   if (@($Rows).Count) {
     $Rows | Export-Csv -LiteralPath $Path -NoTypeInformation -Encoding UTF8
   } else {
-    "item_key,item_name,stock_qty,stock_status,current_price,last_approved_at,needs_pricing,source_synced_at" |
+    "item_key,item_name,stock_qty,stock_status,unit2_name,unit2_factor,current_unit2_price,current_unit1_price,last_approved_at,needs_pricing,source_synced_at" |
       Set-Content -LiteralPath $Path -Encoding UTF8
   }
 }
@@ -120,7 +120,7 @@ try {
 
   $approvedRows = @()
   try {
-    $approvedRows = @(Invoke-SupabaseGet -Url $supabaseUrl -ApiKey $supabaseKey -Session $session -PathAndQuery "approved_price_items?select=item_key,item_name,sale_price,approved_at,updated_at&order=item_name.asc")
+    $approvedRows = @(Invoke-SupabaseGet -Url $supabaseUrl -ApiKey $supabaseKey -Session $session -PathAndQuery "approved_price_items?select=item_key,item_name,sale_price,unit2_price,unit2_name,unit2_factor,approved_at,updated_at&order=item_name.asc")
   } catch {
     $statusCode = $null
     if ($_.Exception.Response) {
@@ -156,6 +156,11 @@ try {
     $approved = $approvedByKey[$key]
     $lastApprovedAt = if ($approved) { if ($approved.approved_at) { $approved.approved_at } else { $approved.updated_at } } else { "" }
     $pricedToday = Is-Today $lastApprovedAt
+    $itemUnit2Factor = [double]($item.unit2Factor)
+    if ($itemUnit2Factor -le 0) {
+      $itemUnit2Factor = 1
+    }
+    $itemUnit2Name = if ($item.unit2Name) { [string]$item.unit2Name } else { [string]$item.unit1Name }
 
     if (-not $pricedToday) {
       $worklist += [PSCustomObject]@{
@@ -163,7 +168,10 @@ try {
         item_name = [string]$item.name
         stock_qty = [math]::Round($qty, 3)
         stock_status = [string]$item.status
-        current_price = if ($approved) { [double]$approved.sale_price } else { "" }
+        unit2_name = $itemUnit2Name
+        unit2_factor = [math]::Round($itemUnit2Factor, 3)
+        current_unit2_price = if ($approved -and $approved.unit2_price) { [double]$approved.unit2_price } elseif ($approved -and $approved.sale_price) { [double]$approved.sale_price * $itemUnit2Factor } else { "" }
+        current_unit1_price = if ($approved) { [double]$approved.sale_price } else { "" }
         last_approved_at = $lastApprovedAt
         needs_pricing = "yes"
         source_synced_at = $sourceSyncedAt
@@ -178,4 +186,3 @@ try {
   Write-PricingWorklistLog "Daily pricing worklist failed: $($_.Exception.Message)"
   throw
 }
-

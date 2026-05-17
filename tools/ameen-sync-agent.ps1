@@ -147,6 +147,15 @@ function Build-InventoryReport($Rows, $LowThreshold) {
     }
 
     $qty = To-Number $row.stock_qty
+    $unit1Name = if ($row.PSObject.Properties.Name -contains "unit1_name") { [string]$row.unit1_name } else { "" }
+    $unit2Name = if ($row.PSObject.Properties.Name -contains "unit2_name") { [string]$row.unit2_name } else { "" }
+    $unit2Factor = if ($row.PSObject.Properties.Name -contains "unit2_factor") { To-Number $row.unit2_factor } else { 1 }
+    if ($unit2Factor -le 0) {
+      $unit2Factor = 1
+    }
+    if (-not $unit2Name) {
+      $unit2Name = $unit1Name
+    }
     $status = "active"
     if ($qty -le 0) {
       $status = "out"
@@ -159,6 +168,9 @@ function Build-InventoryReport($Rows, $LowThreshold) {
       name = $name
       stockQty = [math]::Round($qty, 3)
       status = $status
+      unit1Name = $unit1Name
+      unit2Name = $unit2Name
+      unit2Factor = [math]::Round($unit2Factor, 3)
       priceListed = $false
       lowThreshold = $LowThreshold
     }

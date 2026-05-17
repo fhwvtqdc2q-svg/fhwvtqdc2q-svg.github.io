@@ -118,6 +118,11 @@
       salePrice: Number(row.sale_price || 0),
       stockQty: Number(row.stock_qty || 0),
       stockStatus: row.stock_status || "",
+      unit1Name: row.unit1_name || "",
+      unit2Name: row.unit2_name || "",
+      unit2Factor: Number(row.unit2_factor || 1),
+      unit2Price: Number(row.unit2_price || 0),
+      unit1Price: Number(row.unit1_price || row.sale_price || 0),
       sourceReportId: row.source_report_id || "",
       sourceSyncedAt: row.source_synced_at || "",
       pricePayload: row.price_payload || {},
@@ -128,14 +133,27 @@
   }
 
   function normalizeApprovedPriceInput(input, userId = null) {
-    const salePrice = Number(input.salePrice || 0);
+    const rawUnit2Factor = Number(input.unit2Factor || 1);
+    const unit2Factor = Number.isFinite(rawUnit2Factor) && rawUnit2Factor > 0 ? rawUnit2Factor : 1;
+    const unit2Price = Number(input.unit2Price || 0);
+    const explicitSalePrice = Number(input.salePrice || input.unit1Price || 0);
+    const salePrice =
+      Number.isFinite(unit2Price) && unit2Price > 0
+        ? unit2Price / unit2Factor
+        : explicitSalePrice;
     const stockQty = Number(input.stockQty || 0);
+    const cleanSalePrice = Number.isFinite(salePrice) ? Math.max(0, salePrice) : 0;
     return {
       item_key: cleanText(input.itemKey, 240),
       item_name: cleanText(input.itemName, 240),
-      sale_price: Number.isFinite(salePrice) ? Math.max(0, salePrice) : 0,
+      sale_price: cleanSalePrice,
       stock_qty: Number.isFinite(stockQty) ? stockQty : 0,
       stock_status: cleanText(input.stockStatus, 40),
+      unit1_name: cleanText(input.unit1Name, 80),
+      unit2_name: cleanText(input.unit2Name, 80),
+      unit2_factor: unit2Factor,
+      unit2_price: Number.isFinite(unit2Price) ? Math.max(0, unit2Price) : 0,
+      unit1_price: cleanSalePrice,
       source_report_id: input.sourceReportId || null,
       source_synced_at: input.sourceSyncedAt || null,
       price_payload: input.pricePayload || {},
@@ -412,7 +430,7 @@
 
       const { data, error } = await client
         .from(approvedPricesTable)
-        .select("id, item_key, item_name, sale_price, stock_qty, stock_status, source_report_id, source_synced_at, price_payload, notes, approved_at, updated_at")
+        .select("id, item_key, item_name, sale_price, stock_qty, stock_status, unit1_name, unit2_name, unit2_factor, unit2_price, unit1_price, source_report_id, source_synced_at, price_payload, notes, approved_at, updated_at")
         .order("item_name", { ascending: true })
         .limit(5000);
 
@@ -448,7 +466,7 @@
       const { data, error } = await client
         .from(approvedPricesTable)
         .upsert(withUser, { onConflict: "item_key" })
-        .select("id, item_key, item_name, sale_price, stock_qty, stock_status, source_report_id, source_synced_at, price_payload, notes, approved_at, updated_at");
+        .select("id, item_key, item_name, sale_price, stock_qty, stock_status, unit1_name, unit2_name, unit2_factor, unit2_price, unit1_price, source_report_id, source_synced_at, price_payload, notes, approved_at, updated_at");
 
       if (error) throw new Error(error.message);
       return (data || []).map(normalizeDbApprovedPrice);
@@ -486,7 +504,7 @@
       const { data, error } = await client
         .from(approvedPricesTable)
         .insert(withUser)
-        .select("id, item_key, item_name, sale_price, stock_qty, stock_status, source_report_id, source_synced_at, price_payload, notes, approved_at, updated_at");
+        .select("id, item_key, item_name, sale_price, stock_qty, stock_status, unit1_name, unit2_name, unit2_factor, unit2_price, unit1_price, source_report_id, source_synced_at, price_payload, notes, approved_at, updated_at");
 
       if (error) throw new Error(error.message);
       return (data || []).map(normalizeDbApprovedPrice);

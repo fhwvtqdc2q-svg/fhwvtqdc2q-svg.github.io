@@ -71,17 +71,34 @@ function Invoke-SupabaseGet($Url, $ApiKey, $Session, $PathAndQuery) {
   return Invoke-RestMethod -Method Get -Uri $endpoint -Headers $headers
 }
 
+function Test-ApprovedPriceRow($Row) {
+  if ($null -eq $Row) {
+    return $false
+  }
+  if (-not ($Row.PSObject.Properties.Name -contains "item_key")) {
+    return $false
+  }
+  return -not [string]::IsNullOrWhiteSpace([string]$Row.item_key)
+}
+
 function Write-ApprovedPricesCsv($Rows, $Path) {
   $outDir = Split-Path -Parent $Path
   if ($outDir -and -not (Test-Path -LiteralPath $outDir)) {
     New-Item -ItemType Directory -Force -Path $outDir | Out-Null
   }
 
-  $objects = @($Rows | ForEach-Object {
+  $validRows = @($Rows | Where-Object { Test-ApprovedPriceRow $_ })
+
+  $objects = @($validRows | ForEach-Object {
     [PSCustomObject]@{
       item_key = $_.item_key
       item_name = $_.item_name
+      unit2_price = $_.unit2_price
+      unit2_name = $_.unit2_name
+      unit2_factor = $_.unit2_factor
       sale_price = $_.sale_price
+      unit1_name = $_.unit1_name
+      unit1_price = $_.unit1_price
       stock_qty = $_.stock_qty
       stock_status = $_.stock_status
       approved_at = $_.approved_at
@@ -92,7 +109,7 @@ function Write-ApprovedPricesCsv($Rows, $Path) {
   if ($objects.Count) {
     $objects | Export-Csv -LiteralPath $Path -NoTypeInformation -Encoding UTF8
   } else {
-    "item_key,item_name,sale_price,stock_qty,stock_status,approved_at,updated_at" | Set-Content -LiteralPath $Path -Encoding UTF8
+    "item_key,item_name,unit2_price,unit2_name,unit2_factor,sale_price,unit1_name,unit1_price,stock_qty,stock_status,approved_at,updated_at" | Set-Content -LiteralPath $Path -Encoding UTF8
   }
 }
 
@@ -113,7 +130,7 @@ $syncPassword = Require-Value "TOBACCO_SYNC_PASSWORD" (Optional-Env "TOBACCO_SYN
 
 try {
   $session = Get-SupabaseSession -Url $supabaseUrl -ApiKey $supabaseKey -Email $syncEmail -Password $syncPassword
-  $rows = @(Invoke-SupabaseGet -Url $supabaseUrl -ApiKey $supabaseKey -Session $session -PathAndQuery "approved_price_items?select=item_key,item_name,sale_price,stock_qty,stock_status,approved_at,updated_at&order=item_name.asc")
+  $rows = @(Invoke-SupabaseGet -Url $supabaseUrl -ApiKey $supabaseKey -Session $session -PathAndQuery "approved_price_items?select=item_key,item_name,unit2_price,unit2_name,unit2_factor,sale_price,unit1_name,unit1_price,stock_qty,stock_status,approved_at,updated_at&order=item_name.asc" | Where-Object { Test-ApprovedPriceRow $_ })
   Write-ApprovedPricesCsv -Rows $rows -Path $OutputPath
   Write-PricePullLog ("Pulled {0} approved prices to {1}" -f $rows.Count, (Resolve-Path -LiteralPath $OutputPath))
 } catch {

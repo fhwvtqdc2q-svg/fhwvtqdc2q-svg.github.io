@@ -695,7 +695,10 @@ function downloadLivePriceTemplate() {
   const rows = availableItems.map((item) => [
     item.name || "",
     itemQty(item),
+    itemUnit2Name(item),
+    itemUnit2Factor(item),
     "",
+    itemUnit1Name(item),
     statusLabel(item.status),
     reportSyncedAt(latest)
   ]);
@@ -703,6 +706,11 @@ function downloadLivePriceTemplate() {
     ["اسم المادة", "الكمية المتوفرة", "سعر البيع", "الحالة", "آخر مزامنة"],
     ...rows
   ]);
+  window.XLSX.utils.sheet_add_aoa(
+    worksheet,
+    [["اسم المادة", "الكمية المتوفرة", "الوحدة الثانية", "عامل التحويل", "سعر الوحدة الثانية", "الوحدة الأولى", "الحالة", "آخر مزامنة"]],
+    { origin: "A1" }
+  );
   const workbook = window.XLSX.utils.book_new();
   window.XLSX.utils.book_append_sheet(workbook, worksheet, "price-template");
   window.XLSX.writeFile(workbook, `tobacco-price-template-${todayIsoDate()}.xlsx`);
@@ -731,15 +739,23 @@ async function importLivePriceList(form) {
     const zeroPriceRows = price.rows.filter((row) => availableKeys.has(row.key) && !row.hasPrice);
     const approvedItems = filteredRows.map((row) => {
       const stockItem = availableByKey.get(row.key);
+      const unit2Price = firstPositivePrice(row.raw, price.priceIndexes);
+      const unit2Factor = itemUnit2Factor(stockItem);
       return {
         itemKey: row.key,
         itemName: row.name,
-        salePrice: firstPositivePrice(row.raw, price.priceIndexes),
+        unit1Name: itemUnit1Name(stockItem),
+        unit2Name: itemUnit2Name(stockItem),
+        unit2Factor,
+        unit2Price,
+        unit1Price: unit2Price / unit2Factor,
+        salePrice: unit2Price / unit2Factor,
         stockQty: itemQty(stockItem),
         stockStatus: stockItem?.status || "active",
         sourceReportId: uuidOrNull(latest.id),
         sourceSyncedAt: reportSyncedAt(latest),
         pricePayload: {
+          pricedUnit: "unit2",
           headers: price.headers,
           row: row.raw
         }
@@ -793,7 +809,11 @@ function downloadApprovedPricesForAccounting() {
   assertExcelSupport();
   const rows = items.map((item) => [
     item.itemName || "",
+    Number(item.unit2Price || 0),
+    item.unit2Name || "",
+    Number(item.unit2Factor || 1),
     Number(item.salePrice || 0),
+    item.unit1Name || "",
     Number(item.stockQty || 0),
     item.stockStatus || "",
     item.approvedAt || item.updatedAt || ""
@@ -802,6 +822,11 @@ function downloadApprovedPricesForAccounting() {
     ["اسم المادة", "سعر البيع", "الكمية", "الحالة", "وقت الاعتماد"],
     ...rows
   ]);
+  window.XLSX.utils.sheet_add_aoa(
+    worksheet,
+    [["اسم المادة", "سعر الوحدة الثانية", "الوحدة الثانية", "عامل التحويل", "سعر الوحدة الأولى", "الوحدة الأولى", "الكمية", "الحالة", "وقت الاعتماد"]],
+    { origin: "A1" }
+  );
   const workbook = window.XLSX.utils.book_new();
   window.XLSX.utils.book_append_sheet(workbook, worksheet, "accounting-prices");
   window.XLSX.writeFile(workbook, `tobacco-accounting-prices-${todayIsoDate()}.xlsx`);
@@ -832,6 +857,10 @@ function pricingWorklistItems() {
         key,
         approvedPrice: price,
         salePrice: Number(price?.salePrice || 0),
+        unit1Name: item.unit1Name || price?.unit1Name || "",
+        unit2Name: item.unit2Name || price?.unit2Name || item.unit1Name || "",
+        unit2Factor: itemUnit2Factor({ ...item, approvedPrice: price }),
+        unit2Price: itemUnit2Price({ ...item, approvedPrice: price }),
         pricedToday: isSameIsoDay(price?.approvedAt || price?.updatedAt)
       };
     })
@@ -855,7 +884,11 @@ function downloadDailyPricingWorklist() {
   const rows = items.map((item) => [
     item.name || "",
     itemQty(item),
+    itemUnit2Name(item),
+    itemUnit2Factor(item),
+    item.unit2Price > 0 ? item.unit2Price : "",
     item.salePrice > 0 ? item.salePrice : "",
+    itemUnit1Name(item),
     item.pricedToday ? "مسعر اليوم" : "بحاجة تسعير",
     item.approvedPrice?.approvedAt || item.approvedPrice?.updatedAt || "",
     reportSyncedAt(latest)
@@ -864,6 +897,11 @@ function downloadDailyPricingWorklist() {
     ["اسم المادة", "الكمية المتوفرة", "سعر البيع", "حالة التسعير", "آخر اعتماد", "آخر مزامنة جرد"],
     ...rows
   ]);
+  window.XLSX.utils.sheet_add_aoa(
+    worksheet,
+    [["اسم المادة", "الكمية المتوفرة", "الوحدة الثانية", "عامل التحويل", "سعر الوحدة الثانية", "سعر الوحدة الأولى", "الوحدة الأولى", "حالة التسعير", "آخر اعتماد", "آخر مزامنة جرد"]],
+    { origin: "A1" }
+  );
   const workbook = window.XLSX.utils.book_new();
   window.XLSX.utils.book_append_sheet(workbook, worksheet, "daily-pricing");
   window.XLSX.writeFile(workbook, `tobacco-daily-pricing-${todayIsoDate()}.xlsx`);
@@ -876,9 +914,14 @@ async function savePricingItem(form) {
     const latest = state.inventoryReports[0];
     const itemKey = form.dataset.itemKey || "";
     const itemName = form.dataset.itemName || "";
-    const salePrice = toNumber(formValue(form, "salePrice"));
+    const unit1Name = form.dataset.unit1Name || "";
+    const unit2Name = form.dataset.unit2Name || unit1Name;
+    const unit2Factor = Math.max(1, toNumber(form.dataset.unit2Factor || 1));
+    const unit2Price = toNumber(formValue(form, "salePrice"));
+    const salePrice = unit2Price / unit2Factor;
     const stockQty = toNumber(form.dataset.stockQty);
     const stockStatus = form.dataset.stockStatus || "active";
+    if (unit2Price <= 0) throw new Error("اكتب سعر الوحدة الثانية أكبر من صفر.");
 
     if (!latest) throw new Error("لا يوجد جرد حي للمطابقة.");
     if (!itemKey || !itemName) throw new Error("لا يمكن حفظ السعر بدون مادة واضحة.");
@@ -889,6 +932,11 @@ async function savePricingItem(form) {
       {
         itemKey,
         itemName,
+        unit1Name,
+        unit2Name,
+        unit2Factor,
+        unit2Price,
+        unit1Price: salePrice,
         salePrice,
         stockQty,
         stockStatus,
@@ -896,6 +944,7 @@ async function savePricingItem(form) {
         sourceSyncedAt: reportSyncedAt(latest),
         pricePayload: {
           source: "phone_pricing_page",
+          pricedUnit: "unit2",
           pricedDate: todayIsoDate()
         }
       }
@@ -1281,6 +1330,26 @@ function itemQty(item) {
   return Number(item?.stockQty || 0);
 }
 
+function itemUnit1Name(item) {
+  return item?.unit1Name || item?.approvedPrice?.unit1Name || "الوحدة الأولى";
+}
+
+function itemUnit2Name(item) {
+  return item?.unit2Name || item?.approvedPrice?.unit2Name || itemUnit1Name(item);
+}
+
+function itemUnit2Factor(item) {
+  const factor = Number(item?.unit2Factor || item?.approvedPrice?.unit2Factor || 1);
+  return Number.isFinite(factor) && factor > 0 ? factor : 1;
+}
+
+function itemUnit2Price(item) {
+  const savedUnit2Price = Number(item?.unit2Price || item?.approvedPrice?.unit2Price || 0);
+  if (savedUnit2Price > 0) return savedUnit2Price;
+  const unit1Price = Number(item?.salePrice || item?.approvedPrice?.salePrice || 0);
+  return unit1Price > 0 ? unit1Price * itemUnit2Factor(item) : 0;
+}
+
 function isNegativeItem(item) {
   return itemQty(item) < 0;
 }
@@ -1655,18 +1724,24 @@ function ameenBrowser(items) {
 function pricingRow(item) {
   const qty = itemQty(item);
   const price = Number(item.salePrice || 0);
+  const unit2Price = itemUnit2Price(item);
+  const unit1Name = itemUnit1Name(item);
+  const unit2Name = itemUnit2Name(item);
+  const unit2Factor = itemUnit2Factor(item);
   const rowState = item.pricedToday ? "active" : item.status;
   return `
     <div class="inventory-row inventory-row-${escapeHtml(rowState)}">
       <div class="customer-row-title">
         <strong>${escapeHtml(item.name)}</strong>
+        <small>${escapeHtml(unit2Name)} / ${escapeHtml(unit2Factor)} ${escapeHtml(unit1Name)}</small>
         <span class="status-chip">${escapeHtml(item.pricedToday ? "مسعر اليوم" : "بحاجة تسعير")}</span>
       </div>
       <span>الكمية: ${escapeHtml(qty)} / الحالة: ${escapeHtml(statusLabel(item.status))} / آخر سعر: ${escapeHtml(price > 0 ? formatMoney(price) : "غير مسعر")}</span>
-      <form class="customer-limit-editor" data-form="pricing-item" data-item-key="${escapeHtml(item.key)}" data-item-name="${escapeHtml(item.name || "")}" data-stock-qty="${escapeHtml(qty)}" data-stock-status="${escapeHtml(item.status || "")}">
+      <span>سعر ${escapeHtml(unit2Name)}: ${escapeHtml(unit2Price > 0 ? formatMoney(unit2Price) : "غير مسعر")} / سعر ${escapeHtml(unit1Name)}: ${escapeHtml(price > 0 ? formatMoney(price) : "غير مسعر")}</span>
+      <form class="customer-limit-editor" data-form="pricing-item" data-item-key="${escapeHtml(item.key)}" data-item-name="${escapeHtml(item.name || "")}" data-stock-qty="${escapeHtml(qty)}" data-stock-status="${escapeHtml(item.status || "")}" data-unit1-name="${escapeHtml(unit1Name)}" data-unit2-name="${escapeHtml(unit2Name)}" data-unit2-factor="${escapeHtml(unit2Factor)}">
         <label>
           سعر البيع
-          <input name="salePrice" type="text" inputmode="decimal" dir="ltr" value="${escapeHtml(price > 0 ? price : "")}" placeholder="0">
+          <input name="salePrice" type="text" inputmode="decimal" dir="ltr" value="${escapeHtml(unit2Price > 0 ? unit2Price : "")}" placeholder="0">
         </label>
         <button class="button secondary mini-button" type="submit">حفظ السعر</button>
       </form>
