@@ -206,9 +206,16 @@ function Build-CustomerBalanceReport($Rows) {
 
   $totalBalance = 0.0
   $totalCreditLimit = 0.0
+  $totalDebitBalance = 0.0
+  $totalCreditBalance = 0.0
   foreach ($item in $items) {
     $totalBalance += [double]$item.balance
     $totalCreditLimit += [double]$item.creditLimit
+    if ([double]$item.balance -gt 0) {
+      $totalDebitBalance += [double]$item.balance
+    } elseif ([double]$item.balance -lt 0) {
+      $totalCreditBalance += [double]$item.balance
+    }
   }
 
   $summary = [ordered]@{
@@ -216,10 +223,14 @@ function Build-CustomerBalanceReport($Rows) {
     source = "ameen_customer_balances"
     totalCustomers = $items.Count
     customersWithBalance = @($items | Where-Object { $_.balance -ne 0 }).Count
+    customersWithDebitBalance = @($items | Where-Object { $_.balance -gt 0 }).Count
+    customersWithCreditBalance = @($items | Where-Object { $_.balance -lt 0 }).Count
     customersWithLimit = @($items | Where-Object { $_.creditLimit -gt 0 }).Count
     overLimitCustomers = @($items | Where-Object { $_.status -eq "over_limit" }).Count
     nearLimitCustomers = @($items | Where-Object { $_.status -eq "near_limit" }).Count
     totalBalance = [math]::Round($totalBalance, 3)
+    totalDebitBalance = [math]::Round($totalDebitBalance, 3)
+    totalCreditBalance = [math]::Round($totalCreditBalance, 3)
     totalCreditLimit = [math]::Round($totalCreditLimit, 3)
     syncedAt = (Get-Date).ToUniversalTime().ToString("o")
   }

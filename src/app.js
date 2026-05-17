@@ -115,7 +115,7 @@ const state = {
   ameenFilter: "alerts",
   ameenSort: "qtyAsc",
   customerSearch: "",
-  customerFilter: "balances",
+  customerFilter: "debit_balance",
   customerSort: "balanceDesc",
   loading: true,
   notice: null
@@ -632,6 +632,34 @@ function downloadFilteredInventoryReport() {
   render();
 }
 
+function downloadFilteredCustomerBalances() {
+  const latest = state.customerBalanceReports[0];
+  const items = filteredCustomerItems(Array.isArray(latest?.items) ? latest.items : []);
+  if (!latest || !items.length) {
+    setNotice("error", "لا توجد أرصدة زبائن معروضة للتصدير حسب البحث والفلتر الحالي.");
+    render();
+    return;
+  }
+
+  assertExcelSupport();
+  const rows = items.map((item) => [
+    item.name || "",
+    customerBalance(item),
+    customerLimit(item) > 0 ? customerLimit(item) : "",
+    customerLimit(item) > 0 ? customerRemainingLimit(item) : "",
+    customerStatusLabel(item.status)
+  ]);
+  const worksheet = window.XLSX.utils.aoa_to_sheet([
+    ["الزبون", "الرصيد", "الحد المسموح", "المتبقي من الحد", "الحالة"],
+    ...rows
+  ]);
+  const workbook = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(workbook, worksheet, "customer-balances");
+  window.XLSX.writeFile(workbook, `tobacco-customer-balances-${todayIsoDate()}.xlsx`);
+  setNotice("success", "تم تنزيل أرصدة الزبائن المعروضة حسب البحث والفلتر الحالي.");
+  render();
+}
+
 async function installApp() {
   if (!state.installPrompt) return;
   state.installPrompt.prompt();
@@ -994,11 +1022,13 @@ function ameenSyncState(syncedAt) {
 }
 
 const customerFilters = [
-  { id: "balances", label: "أصحاب رصيد" },
-  { id: "all", label: "الكل" },
+  { id: "debit_balance", label: "عليه رصيد" },
+  { id: "credit_balance", label: "له رصيد" },
+  { id: "clear", label: "بلا رصيد" },
+  { id: "no_limit", label: "بلا حد" },
   { id: "over_limit", label: "تجاوز الحد" },
   { id: "near_limit", label: "قريب من الحد" },
-  { id: "no_limit", label: "بلا حد" }
+  { id: "all", label: "الكل" }
 ];
 
 function customerBalance(item) {
@@ -1032,7 +1062,9 @@ function formatMoney(value) {
 function customerFilterCounts(items) {
   return {
     all: items.length,
-    balances: items.filter((item) => customerBalance(item) !== 0).length,
+    debit_balance: items.filter((item) => customerBalance(item) > 0).length,
+    credit_balance: items.filter((item) => customerBalance(item) < 0).length,
+    clear: items.filter((item) => customerBalance(item) === 0).length,
     over_limit: items.filter((item) => item.status === "over_limit").length,
     near_limit: items.filter((item) => item.status === "near_limit").length,
     no_limit: items.filter((item) => customerLimit(item) <= 0).length
@@ -1053,10 +1085,12 @@ function matchesCustomerSearch(item, query) {
 function filterCustomerItems(items, filter, query) {
   return items.filter((item) => {
     if (!matchesCustomerSearch(item, query)) return false;
+    if (filter === "debit_balance") return customerBalance(item) > 0;
+    if (filter === "credit_balance") return customerBalance(item) < 0;
+    if (filter === "clear") return customerBalance(item) === 0;
     if (filter === "over_limit") return item.status === "over_limit";
     if (filter === "near_limit") return item.status === "near_limit";
     if (filter === "no_limit") return customerLimit(item) <= 0;
-    if (filter === "balances") return customerBalance(item) !== 0;
     return true;
   });
 }
@@ -1213,9 +1247,13 @@ function customerBalanceSection(report) {
       </div>
       <div class="inventory-metrics">
         ${inventoryMetric("عدد الزبائن", summary.totalCustomers || items.length, "من cu000")}
-        ${inventoryMetric("لديهم رصيد", summary.customersWithBalance || counts.balances, "رصيد غير صفر")}
+        ${inventoryMetric("عليهم رصيد", summary.customersWithDebitBalance || counts.debit_balance, "رصيد موجب")}
+        ${inventoryMetric("إجمالي الديون", formatMoney(summary.totalDebitBalance || 0), "مجموع الأرصدة الموجبة")}
+        ${inventoryMetric("لهم رصيد", summary.customersWithCreditBalance || counts.credit_balance, "رصيد سالب")}
+        ${inventoryMetric("إجمالي لصالحهم", formatMoney(summary.totalCreditBalance || 0), "مجموع الأرصدة السالبة")}
         ${inventoryMetric("تجاوزوا الحد", summary.overLimitCustomers || 0, "حسب الحد المسجل")}
         ${inventoryMetric("حدود مسجلة", summary.customersWithLimit || 0, "MaxDebit أكبر من صفر")}
+        ${inventoryMetric("بلا حد", counts.no_limit, "لا يوجد حد مسجل")}
       </div>
       <div class="inventory-controls">
         <label>
@@ -1242,6 +1280,9 @@ function customerBalanceSection(report) {
             `
           )
           .join("")}
+      </div>
+      <div class="button-row report-actions">
+        <button class="button secondary" type="button" data-action="download-customer-balances" ${filtered.length ? "" : "disabled"}>تصدير أرصدة الزبائن</button>
       </div>
       <div class="inventory-list inventory-list-dense customer-results" data-customer-results>
         ${filtered.length ? filtered.slice(0, 80).map(customerBalanceRow).join("") : '<p class="muted">لا توجد زبائن تطابق البحث والفلتر الحالي.</p>'}
@@ -1522,6 +1563,7 @@ function render() {
   app.querySelector("[data-action='download-prices']")?.addEventListener("click", downloadFilteredPriceList);
   app.querySelector("[data-action='download-inventory']")?.addEventListener("click", downloadLatestInventoryReport);
   app.querySelector("[data-action='download-filtered-inventory']")?.addEventListener("click", downloadFilteredInventoryReport);
+  app.querySelector("[data-action='download-customer-balances']")?.addEventListener("click", downloadFilteredCustomerBalances);
   app.querySelector("[data-action='refresh-ameen']")?.addEventListener("click", refreshAmeenReports);
 
   app.querySelector("[data-ameen-search]")?.addEventListener("input", (event) => {
