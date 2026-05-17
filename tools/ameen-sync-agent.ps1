@@ -54,7 +54,11 @@ function Get-SupabaseSession($Url, $ApiKey, $Email, $Password) {
     password = $Password
   } | ConvertTo-Json
 
-  return Invoke-RestMethod -Method Post -Uri $endpoint -Headers $headers -Body $body
+  try {
+    return Invoke-RestMethod -Method Post -Uri $endpoint -Headers $headers -Body $body
+  } catch {
+    throw "Supabase login failed for TOBACCO_SYNC_EMAIL. Rerun tools\setup-ameen-sync-env.ps1 with a valid Supabase Auth user. Original error: $($_.Exception.Message)"
+  }
 }
 
 function Invoke-SqlRows($ConnectionString, $Query) {

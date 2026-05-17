@@ -41,6 +41,42 @@ function Set-UserAndProcessEnv($Name, $Value) {
   [Environment]::SetEnvironmentVariable($Name, $Value, "Process")
 }
 
+function Test-SqlLogin($ConnectionString) {
+  $connection = New-Object System.Data.SqlClient.SqlConnection $ConnectionString
+  try {
+    $connection.Open()
+    $command = $connection.CreateCommand()
+    $command.CommandTimeout = 30
+    $command.CommandText = "select count_big(*) from dbo.mt000;"
+    [void]$command.ExecuteScalar()
+  } finally {
+    if ($connection.State -eq "Open") {
+      $connection.Close()
+    }
+  }
+}
+
+function Test-SupabaseLogin($Url, $ApiKey, $Email, $Password) {
+  $endpoint = "$($Url.TrimEnd('/'))/auth/v1/token?grant_type=password"
+  $headers = @{
+    apikey = $ApiKey
+    "Content-Type" = "application/json"
+  }
+  $body = @{
+    email = $Email
+    password = $Password
+  } | ConvertTo-Json
+
+  try {
+    $session = Invoke-RestMethod -Method Post -Uri $endpoint -Headers $headers -Body $body
+    if (-not $session.access_token -or -not $session.user.id) {
+      throw "Supabase did not return a valid session."
+    }
+  } catch {
+    throw "Supabase login failed. Create/confirm the sync user in Supabase Auth, or rerun this script with the correct email and password. Original error: $($_.Exception.Message)"
+  }
+}
+
 Add-Type -AssemblyName System.Data
 
 if (-not (Test-Path -LiteralPath $ConfigPath)) {
@@ -62,6 +98,9 @@ try {
   $sqlPassword = Convert-SecureStringToPlainText $sqlSecurePassword
   $supabasePassword = Convert-SecureStringToPlainText $supabaseSecurePassword
   $connectionString = New-SqlConnectionString -Server $Server -Database $Database -UserName $SqlUserName -Password $sqlPassword
+
+  Test-SqlLogin -ConnectionString $connectionString
+  Test-SupabaseLogin -Url $supabaseUrl -ApiKey $supabaseKey -Email $syncEmail -Password $supabasePassword
 
   Set-UserAndProcessEnv -Name "AMEEN_SQL_CONNECTION_STRING" -Value $connectionString
   Set-UserAndProcessEnv -Name "TOBACCO_SUPABASE_URL" -Value $supabaseUrl.TrimEnd("/")
