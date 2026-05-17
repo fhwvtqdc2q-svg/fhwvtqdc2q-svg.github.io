@@ -60,19 +60,23 @@ function To-Number($Value) {
   return 0
 }
 
+function ConvertTo-JsonText($Value, $Depth = 10) {
+  return ($Value | ConvertTo-Json -Depth $Depth)
+}
+
 function Get-SupabaseSession($Url, $ApiKey, $Email, $Password) {
   $endpoint = "$Url/auth/v1/token?grant_type=password"
   $headers = @{
     apikey = $ApiKey
-    "Content-Type" = "application/json"
+    Accept = "application/json"
   }
-  $body = @{
+  $body = ConvertTo-JsonText -Value @{
     email = $Email
     password = $Password
-  } | ConvertTo-Json
+  }
 
   try {
-    return Invoke-RestMethod -Method Post -Uri $endpoint -Headers $headers -Body $body
+    return Invoke-RestMethod -Method Post -Uri $endpoint -Headers $headers -ContentType "application/json; charset=utf-8" -Body $body
   } catch {
     throw "Supabase login failed for TOBACCO_SYNC_EMAIL. Rerun tools\setup-ameen-sync-env.ps1 with a valid Supabase Auth user. Original error: $($_.Exception.Message)"
   }
@@ -163,18 +167,18 @@ function Send-InventoryReport($SupabaseUrl, $ApiKey, $Session, $Report) {
   $headers = @{
     apikey = $ApiKey
     Authorization = "Bearer $($Session.access_token)"
-    "Content-Type" = "application/json"
+    Accept = "application/json"
     Prefer = "return=minimal"
   }
-  $body = @{
+  $body = ConvertTo-JsonText -Value @{
     report_date = $Report.Summary.reportDate
     source = "ameen_sql_agent"
     summary = $Report.Summary
     items = $Report.Items
     created_by = $Session.user.id
-  } | ConvertTo-Json -Depth 20
+  } -Depth 20
 
-  Invoke-RestMethod -Method Post -Uri $endpoint -Headers $headers -Body $body | Out-Null
+  Invoke-RestMethod -Method Post -Uri $endpoint -Headers $headers -ContentType "application/json; charset=utf-8" -Body $body | Out-Null
 }
 
 function Sync-Once {
