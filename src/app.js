@@ -113,8 +113,15 @@ function syncFreshnessLabel(value) {
   return `قبل ${Math.round(minutes / 60)} ساعة`;
 }
 
+const allowedRoutes = new Set(["overview", "login", "requests", "ameen", "pricing", "remote", "monitoring", "payments"]);
+
+function initialRoute() {
+  const requestedRoute = new URLSearchParams(window.location.search).get("route");
+  return allowedRoutes.has(requestedRoute) ? requestedRoute : "overview";
+}
+
 const state = {
-  route: "overview",
+  route: initialRoute(),
   installPrompt: null,
   completed: new Set(readJson("completed-items", [])),
   session: null,
@@ -952,7 +959,10 @@ async function savePricingItem(form) {
     const priceMap = approvedPriceMap();
     saved.forEach((item) => priceMap.set(item.itemKey, item));
     state.approvedPriceItems = [...priceMap.values()].sort((a, b) => String(a.itemName || "").localeCompare(String(b.itemName || ""), "ar"));
-    setNotice("success", `تم حفظ سعر ${itemName} وسيسحبه جهاز المحاسبة تلقائياً.`);
+    setNotice(
+      "success",
+      `تم حفظ سعر ${itemName}. سعر ${unit2Name}: ${formatMoney(unit2Price)} / عامل التحويل: ${formatMoney(unit2Factor)} / سعر ${unit1Name}: ${formatMoney(salePrice)}.`
+    );
   } catch (error) {
     setNotice("error", error.message);
   }
@@ -1747,7 +1757,7 @@ function pricingRow(item) {
       <span>سعر ${escapeHtml(unit2Name)}: ${escapeHtml(unit2Price > 0 ? formatMoney(unit2Price) : "غير مسعر")} / سعر ${escapeHtml(unit1Name)}: ${escapeHtml(price > 0 ? formatMoney(price) : "غير مسعر")}</span>
       <form class="customer-limit-editor" data-form="pricing-item" data-item-key="${escapeHtml(item.key)}" data-item-name="${escapeHtml(item.name || "")}" data-stock-qty="${escapeHtml(qty)}" data-stock-status="${escapeHtml(item.status || "")}" data-unit1-name="${escapeHtml(unit1Name)}" data-unit2-name="${escapeHtml(unit2Name)}" data-unit2-factor="${escapeHtml(unit2Factor)}">
         <label>
-          سعر البيع
+          سعر ${escapeHtml(unit2Name)}
           <input name="salePrice" type="text" inputmode="decimal" dir="ltr" value="${escapeHtml(unit2Price > 0 ? unit2Price : "")}" placeholder="0">
         </label>
         <button class="button secondary mini-button" type="submit">حفظ السعر</button>
@@ -1766,6 +1776,10 @@ function pricing() {
   }).length;
   const waiting = Math.max(0, allAvailable.length - pricedToday);
   const syncedAt = reportSyncedAt(latest);
+  const emptyText =
+    dataStore.isConfigured() && !state.session
+      ? "سجل الدخول أولاً حتى تظهر مواد التسعير ويتم الحفظ في Supabase."
+      : "لا توجد مواد متوفرة أو مطابقة للبحث الحالي.";
   const authHint =
     dataStore.isConfigured() && !state.session
       ? '<p class="muted">سجل الدخول حتى تحفظ الأسعار في Supabase وتصل إلى جهاز المحاسبة.</p>'
@@ -1787,6 +1801,7 @@ function pricing() {
         ${inventoryMetric("مسعرة اليوم", pricedToday, "تم حفظها من الهاتف")}
         ${inventoryMetric("بانتظار التسعير", waiting, "ستظهر في قائمة اليوم")}
         ${inventoryMetric("أسعار المحاسبة", state.approvedPriceItems.length, "جاهزة للسحب الآلي")}
+        ${inventoryMetric("تسجيل الدخول", state.session ? "نعم" : "لا", state.session?.email || "لن يتم الحفظ قبل الدخول")}
       </div>
       <div class="inventory-controls">
         <label>
@@ -1807,7 +1822,7 @@ function pricing() {
         <button class="button primary" type="submit" ${allAvailable.length ? "" : "disabled"}>اعتماد ملف الأسعار</button>
       </form>
       <div class="inventory-list inventory-list-dense" data-pricing-results>
-        ${items.length ? items.slice(0, 100).map(pricingRow).join("") : '<p class="muted">لا توجد مواد متوفرة أو مطابقة للبحث الحالي.</p>'}
+        ${items.length ? items.slice(0, 100).map(pricingRow).join("") : `<p class="muted">${escapeHtml(emptyText)}</p>`}
       </div>
       ${items.length > 100 ? '<p class="muted">تم عرض أول 100 مادة فقط. استخدم البحث لتضييق القائمة.</p>' : ""}
     </section>
