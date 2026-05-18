@@ -120,7 +120,8 @@ try {
 
   $approvedRows = @()
   try {
-    $approvedRows = @(Invoke-SupabaseGet -Url $supabaseUrl -ApiKey $supabaseKey -Session $session -PathAndQuery "approved_price_items?select=item_key,item_name,sale_price,unit2_price,unit2_name,unit2_factor,approved_at,updated_at&order=item_name.asc")
+    $approvedResponse = Invoke-SupabaseGet -Url $supabaseUrl -ApiKey $supabaseKey -Session $session -PathAndQuery "approved_price_items?select=item_key,item_name,sale_price,unit2_price,unit2_name,unit2_factor,approved_at,updated_at&order=item_name.asc"
+    $approvedRows = @($approvedResponse)
   } catch {
     $statusCode = $null
     if ($_.Exception.Response) {
@@ -155,31 +156,35 @@ try {
     $key = [string]$item.key
     $approved = $approvedByKey[$key]
     $lastApprovedAt = if ($approved) { if ($approved.approved_at) { $approved.approved_at } else { $approved.updated_at } } else { "" }
-    $pricedToday = Is-Today $lastApprovedAt
     $itemUnit2Factor = [double]($item.unit2Factor)
     if ($itemUnit2Factor -le 0) {
       $itemUnit2Factor = 1
     }
     $itemUnit2Name = if ($item.unit2Name) { [string]$item.unit2Name } else { [string]$item.unit1Name }
 
-    if (-not $pricedToday) {
-      $worklist += [PSCustomObject]@{
-        item_key = $key
-        item_name = [string]$item.name
-        stock_qty = [math]::Round($qty, 3)
-        stock_status = [string]$item.status
-        unit2_name = $itemUnit2Name
-        unit2_factor = [math]::Round($itemUnit2Factor, 3)
-        current_unit2_price = if ($approved -and $approved.unit2_price) { [double]$approved.unit2_price } elseif ($approved -and $approved.sale_price) { [double]$approved.sale_price * $itemUnit2Factor } else { "" }
-        current_unit1_price = if ($approved) { [double]$approved.sale_price } else { "" }
-        last_approved_at = $lastApprovedAt
-        needs_pricing = "yes"
-        source_synced_at = $sourceSyncedAt
-      }
+    $hasApprovedPrice = $false
+    if ($approved) {
+      $approvedUnit2Price = if ($approved.unit2_price) { [double]$approved.unit2_price } else { 0 }
+      $approvedUnit1Price = if ($approved.sale_price) { [double]$approved.sale_price } else { 0 }
+      $hasApprovedPrice = $approvedUnit2Price -gt 0 -or $approvedUnit1Price -gt 0
+    }
+
+    $worklist += [PSCustomObject]@{
+      item_key = $key
+      item_name = [string]$item.name
+      stock_qty = [math]::Round($qty, 3)
+      stock_status = [string]$item.status
+      unit2_name = $itemUnit2Name
+      unit2_factor = [math]::Round($itemUnit2Factor, 3)
+      current_unit2_price = if ($approved -and $approved.unit2_price) { [double]$approved.unit2_price } elseif ($approved -and $approved.sale_price) { [double]$approved.sale_price * $itemUnit2Factor } else { "" }
+      current_unit1_price = if ($approved) { [double]$approved.sale_price } else { "" }
+      last_approved_at = $lastApprovedAt
+      needs_pricing = if ($hasApprovedPrice) { "no" } else { "yes" }
+      source_synced_at = $sourceSyncedAt
     }
   }
 
-  $worklist = @($worklist | Sort-Object item_name)
+  $worklist = @($worklist | Sort-Object @{ Expression = { if ($_.needs_pricing -eq "yes") { 0 } else { 1 } } }, item_name)
   Write-WorklistCsv -Rows $worklist -Path $OutputPath
   Write-PricingWorklistLog ("Generated daily pricing worklist. Items={0}, Output={1}" -f $worklist.Count, (Resolve-Path -LiteralPath $OutputPath))
 } catch {

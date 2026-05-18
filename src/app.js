@@ -868,14 +868,14 @@ function pricingWorklistItems() {
         unit2Name: item.unit2Name || price?.unit2Name || item.unit1Name || "",
         unit2Factor: itemUnit2Factor({ ...item, approvedPrice: price }),
         unit2Price: itemUnit2Price({ ...item, approvedPrice: price }),
-        pricedToday: isSameIsoDay(price?.approvedAt || price?.updatedAt)
+        hasApprovedPrice: Boolean(price && (Number(price.salePrice || 0) > 0 || Number(price.unit2Price || 0) > 0))
       };
     })
     .filter((item) => {
       if (!query) return true;
       return String(item.key || "").includes(query) || normalizeItemName(item.name).includes(query);
     })
-    .sort((a, b) => Number(a.pricedToday) - Number(b.pricedToday) || String(a.name || "").localeCompare(String(b.name || ""), "ar"));
+    .sort((a, b) => Number(a.hasApprovedPrice) - Number(b.hasApprovedPrice) || String(a.name || "").localeCompare(String(b.name || ""), "ar"));
 }
 
 function downloadDailyPricingWorklist() {
@@ -896,7 +896,7 @@ function downloadDailyPricingWorklist() {
     item.unit2Price > 0 ? item.unit2Price : "",
     item.salePrice > 0 ? item.salePrice : "",
     itemUnit1Name(item),
-    item.pricedToday ? "مسعر اليوم" : "بحاجة تسعير",
+    item.hasApprovedPrice ? "سعر معتمد" : "بحاجة تسعير",
     item.approvedPrice?.approvedAt || item.approvedPrice?.updatedAt || "",
     reportSyncedAt(latest)
   ]);
@@ -1748,13 +1748,13 @@ function pricingRow(item) {
   const unit1Name = itemUnit1Name(item);
   const unit2Name = itemUnit2Name(item);
   const unit2Factor = itemUnit2Factor(item);
-  const rowState = item.pricedToday ? "active" : item.status;
+  const rowState = item.hasApprovedPrice ? "active" : item.status;
   return `
     <div class="inventory-row inventory-row-${escapeHtml(rowState)}">
       <div class="customer-row-title">
         <strong>${escapeHtml(item.name)}</strong>
         <small>${escapeHtml(unit2Name)} / ${escapeHtml(unit2Factor)} ${escapeHtml(unit1Name)}</small>
-        <span class="status-chip">${escapeHtml(item.pricedToday ? "مسعر اليوم" : "بحاجة تسعير")}</span>
+        <span class="status-chip">${escapeHtml(item.hasApprovedPrice ? "سعر معتمد" : "بحاجة تسعير")}</span>
       </div>
       <span>الكمية: ${escapeHtml(qty)} / الحالة: ${escapeHtml(statusLabel(item.status))} / آخر سعر: ${escapeHtml(price > 0 ? formatMoney(price) : "غير مسعر")}</span>
       <span>سعر ${escapeHtml(unit2Name)}: ${escapeHtml(unit2Price > 0 ? formatMoney(unit2Price) : "غير مسعر")} / سعر ${escapeHtml(unit1Name)}: ${escapeHtml(price > 0 ? formatMoney(price) : "غير مسعر")}</span>
@@ -1773,11 +1773,11 @@ function pricing() {
   const latest = state.inventoryReports[0];
   const items = pricingWorklistItems();
   const allAvailable = liveAvailableItems();
-  const pricedToday = allAvailable.filter((item) => {
+  const approvedCount = allAvailable.filter((item) => {
     const price = approvedPriceMap().get(item.key || normalizeItemName(item.name));
-    return isSameIsoDay(price?.approvedAt || price?.updatedAt);
+    return price && (Number(price.salePrice || 0) > 0 || Number(price.unit2Price || 0) > 0);
   }).length;
-  const waiting = Math.max(0, allAvailable.length - pricedToday);
+  const waiting = Math.max(0, allAvailable.length - approvedCount);
   const syncedAt = reportSyncedAt(latest);
   const emptyText =
     dataStore.isConfigured() && !state.session
@@ -1801,8 +1801,8 @@ function pricing() {
       ${state.approvedPriceError ? `<p class="muted">تنبيه الأسعار: ${escapeHtml(state.approvedPriceError)}</p>` : ""}
       <div class="inventory-metrics">
         ${inventoryMetric("مواد للتسعير", allAvailable.length, "من آخر جرد حي")}
-        ${inventoryMetric("مسعرة اليوم", pricedToday, "تم حفظها من الهاتف")}
-        ${inventoryMetric("بانتظار التسعير", waiting, "ستظهر في قائمة اليوم")}
+        ${inventoryMetric("أسعار معتمدة", approvedCount, "تبقى فعالة يومياً")}
+        ${inventoryMetric("بحاجة تسعير", waiting, "لا يوجد لها سعر معتمد")}
         ${inventoryMetric("أسعار المحاسبة", state.approvedPriceItems.length, "جاهزة للسحب الآلي")}
         ${inventoryMetric("تسجيل الدخول", state.session ? "نعم" : "لا", state.session?.email || "لن يتم الحفظ قبل الدخول")}
       </div>
