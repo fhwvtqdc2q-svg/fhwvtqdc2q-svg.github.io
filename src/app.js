@@ -1825,9 +1825,8 @@ function pricing() {
         <button class="button primary" type="submit" ${allAvailable.length ? "" : "disabled"}>اعتماد ملف الأسعار</button>
       </form>
       <div class="inventory-list inventory-list-dense" data-pricing-results>
-        ${items.length ? items.slice(0, 100).map(pricingRow).join("") : `<p class="muted">${escapeHtml(emptyText)}</p>`}
+        ${items.length ? items.map(pricingRow).join("") : `<p class="muted">${escapeHtml(emptyText)}</p>`}
       </div>
-      ${items.length > 100 ? '<p class="muted">تم عرض أول 100 مادة فقط. استخدم البحث لتضييق القائمة.</p>' : ""}
     </section>
   `);
 }
