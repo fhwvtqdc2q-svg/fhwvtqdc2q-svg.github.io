@@ -814,6 +814,19 @@ function downloadApprovedPricesForAccounting() {
   }
 
   assertExcelSupport();
+
+  const headers = [
+    "اسم المادة",
+    "سعر الوحدة الثانية",
+    "الوحدة الثانية",
+    "عامل التحويل",
+    "سعر الوحدة الأولى",
+    "الوحدة الأولى",
+    "الكمية",
+    "الحالة",
+    "وقت الاعتماد"
+  ];
+
   const rows = items.map((item) => [
     item.itemName || "",
     Number(item.unit2Price || 0),
@@ -825,22 +838,27 @@ function downloadApprovedPricesForAccounting() {
     item.stockStatus || "",
     item.approvedAt || item.updatedAt || ""
   ]);
-  const worksheet = window.XLSX.utils.aoa_to_sheet([
-    ["اسم المادة", "سعر البيع", "الكمية", "الحالة", "وقت الاعتماد"],
-    ...rows
-  ]);
-  window.XLSX.utils.sheet_add_aoa(
-    worksheet,
-    [["اسم المادة", "سعر الوحدة الثانية", "الوحدة الثانية", "عامل التحويل", "سعر الوحدة الأولى", "الوحدة الأولى", "الكمية", "الحالة", "وقت الاعتماد"]],
-    { origin: "A1" }
-  );
+
+  const worksheet = window.XLSX.utils.aoa_to_sheet([headers, ...rows]);
+
+  worksheet["!cols"] = [
+    { wch: 35 },
+    { wch: 18 },
+    { wch: 15 },
+    { wch: 14 },
+    { wch: 18 },
+    { wch: 15 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 22 }
+  ];
+
   const workbook = window.XLSX.utils.book_new();
-  window.XLSX.utils.book_append_sheet(workbook, worksheet, "accounting-prices");
-  window.XLSX.writeFile(workbook, `tobacco-accounting-prices-${todayIsoDate()}.xlsx`);
-  setNotice("success", "تم تنزيل الأسعار المعتمدة للمحاسبة.");
+  window.XLSX.utils.book_append_sheet(workbook, worksheet, "أسعار العملاء");
+  window.XLSX.writeFile(workbook, `ozk-customer-prices-${todayIsoDate()}.xlsx`);
+  setNotice("success", `تم تنزيل نشرة الأسعار: ${items.length} مادة.`);
   render();
 }
-
 function approvedPriceMap() {
   return new Map((state.approvedPriceItems || []).filter((item) => item.itemKey).map((item) => [item.itemKey, item]));
 }
@@ -888,6 +906,20 @@ function downloadDailyPricingWorklist() {
   }
 
   assertExcelSupport();
+
+  const headers = [
+    "اسم المادة",
+    "الكمية المتوفرة",
+    "الوحدة الثانية",
+    "عامل التحويل",
+    "سعر الوحدة الثانية",
+    "سعر الوحدة الأولى",
+    "الوحدة الأولى",
+    "حالة التسعير",
+    "آخر اعتماد",
+    "آخر مزامنة جرد"
+  ];
+
   const rows = items.map((item) => [
     item.name || "",
     itemQty(item),
@@ -900,78 +932,28 @@ function downloadDailyPricingWorklist() {
     item.approvedPrice?.approvedAt || item.approvedPrice?.updatedAt || "",
     reportSyncedAt(latest)
   ]);
-  const worksheet = window.XLSX.utils.aoa_to_sheet([
-    ["اسم المادة", "الكمية المتوفرة", "سعر البيع", "حالة التسعير", "آخر اعتماد", "آخر مزامنة جرد"],
-    ...rows
-  ]);
-  window.XLSX.utils.sheet_add_aoa(
-    worksheet,
-    [["اسم المادة", "الكمية المتوفرة", "الوحدة الثانية", "عامل التحويل", "سعر الوحدة الثانية", "سعر الوحدة الأولى", "الوحدة الأولى", "حالة التسعير", "آخر اعتماد", "آخر مزامنة جرد"]],
-    { origin: "A1" }
-  );
+
+  const worksheet = window.XLSX.utils.aoa_to_sheet([headers, ...rows]);
+
+  worksheet["!cols"] = [
+    { wch: 35 },
+    { wch: 16 },
+    { wch: 15 },
+    { wch: 14 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 15 },
+    { wch: 16 },
+    { wch: 22 },
+    { wch: 22 }
+  ];
+
   const workbook = window.XLSX.utils.book_new();
-  window.XLSX.utils.book_append_sheet(workbook, worksheet, "daily-pricing");
+  window.XLSX.utils.book_append_sheet(workbook, worksheet, "قائمة تسعير اليوم");
   window.XLSX.writeFile(workbook, `tobacco-daily-pricing-${todayIsoDate()}.xlsx`);
   setNotice("success", `تم تنزيل قائمة تسعير اليوم: ${items.length} مادة.`);
   render();
 }
-
-async function savePricingItem(form) {
-  try {
-    const latest = state.inventoryReports[0];
-    const itemKey = form.dataset.itemKey || "";
-    const itemName = form.dataset.itemName || "";
-    const latestItem = reportItems(latest).find((item) => (item.key || normalizeItemName(item.name)) === itemKey);
-    const unit1Name = form.dataset.unit1Name || itemUnit1Name(latestItem) || "";
-    const unit2Name = form.dataset.unit2Name || itemUnit2Name(latestItem) || unit1Name;
-    const formUnit2Factor = toNumber(form.dataset.unit2Factor || 0);
-    const liveUnit2Factor = itemUnit2Factor(latestItem);
-    const unit2Factor = Math.max(1, liveUnit2Factor > 1 ? liveUnit2Factor : formUnit2Factor || 1);
-    const unit2Price = toNumber(formValue(form, "salePrice"));
-    const salePrice = unit2Price / unit2Factor;
-    const stockQty = toNumber(form.dataset.stockQty);
-    const stockStatus = form.dataset.stockStatus || "active";
-    if (unit2Price <= 0) throw new Error("اكتب سعر الوحدة الثانية أكبر من صفر.");
-
-    if (!latest) throw new Error("لا يوجد جرد حي للمطابقة.");
-    if (!itemKey || !itemName) throw new Error("لا يمكن حفظ السعر بدون مادة واضحة.");
-    if (salePrice <= 0) throw new Error("اكتب سعر بيع أكبر من صفر.");
-    if (!dataStore.upsertApprovedPriceItems) throw new Error("حفظ الأسعار غير مفعل في قاعدة البيانات.");
-
-    const saved = await dataStore.upsertApprovedPriceItems([
-      {
-        itemKey,
-        itemName,
-        unit1Name,
-        unit2Name,
-        unit2Factor,
-        unit2Price,
-        unit1Price: salePrice,
-        salePrice,
-        stockQty,
-        stockStatus,
-        sourceReportId: uuidOrNull(latest.id),
-        sourceSyncedAt: reportSyncedAt(latest),
-        pricePayload: {
-          source: "phone_pricing_page",
-          pricedUnit: "unit2",
-          pricedDate: todayIsoDate()
-        }
-      }
-    ]);
-    const priceMap = approvedPriceMap();
-    saved.forEach((item) => priceMap.set(item.itemKey, item));
-    state.approvedPriceItems = [...priceMap.values()].sort((a, b) => String(a.itemName || "").localeCompare(String(b.itemName || ""), "ar"));
-    setNotice(
-      "success",
-      `تم حفظ سعر ${itemName}. سعر ${unit2Name}: ${formatMoney(unit2Price)} / عامل التحويل: ${formatMoney(unit2Factor)} / سعر ${unit1Name}: ${formatMoney(salePrice)}.`
-    );
-  } catch (error) {
-    setNotice("error", error.message);
-  }
-  render();
-}
-
 function downloadLatestInventoryReport() {
   const latest = state.inventoryReports[0];
   const items = reportItems(latest);
