@@ -813,123 +813,111 @@ function downloadApprovedPricesForAccounting() {
     return;
   }
 
-  if (!window.jspdf && !window.jsPDF) {
-    setNotice("error", "مكتبة PDF لم تتحمل بعد. حدث الصفحة ثم جرب مجدداً.");
+  const today = todayIsoDate();
+
+  const rows = items.map((item, idx) => {
+    const u2Price = Number(item.unit2Price || 0);
+    const u1Price = itemUnit1PriceFromSecondUnit(item);
+    const u2Name = escapeHtml(item.unit2Name || item.unit1Name || "");
+    const u1Name = escapeHtml(item.unit1Name || "");
+    const name = escapeHtml(item.itemName || "");
+    const qty = Number(item.stockQty || 0);
+    const bg = idx % 2 === 0 ? "#1a1508" : "#120f05";
+    return `<tr style="background:${bg}">
+      <td style="text-align:right;padding:5px 8px;font-size:11px;color:#ddd;">${idx + 1}</td>
+      <td style="text-align:right;padding:5px 8px;font-size:11px;color:#eee;font-weight:600;">${name}</td>
+      <td style="text-align:center;padding:5px 8px;font-size:11px;color:#d4a550;">${u2Name}</td>
+      <td style="text-align:center;padding:5px 8px;font-size:11px;color:#eee;font-weight:700;">${u2Price > 0 ? u2Price.toFixed(3) : "-"}</td>
+      <td style="text-align:center;padding:5px 8px;font-size:11px;color:#ccc;">${u1Name}</td>
+      <td style="text-align:center;padding:5px 8px;font-size:11px;color:#eee;font-weight:700;">${u1Price > 0 ? u1Price.toFixed(3) : "-"}</td>
+      <td style="text-align:center;padding:5px 8px;font-size:10px;color:#999;">${qty}</td>
+    </tr>`;
+  }).join("");
+
+  const html = `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <title>نشرة الأسعار - OZK Tobacco - ${today}</title>
+  <style>
+    @page { size: A4; margin: 10mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Arial", "Tahoma", sans-serif; background: #0a0802; color: #eee; direction: rtl; }
+    .header { background: linear-gradient(135deg, #1a1304 0%, #0a0802 100%); border-bottom: 3px solid #d4a550; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-title { font-size: 28px; font-weight: 900; color: #d4a550; letter-spacing: 2px; }
+    .brand-sub { font-size: 13px; color: #bbb; margin-top: 2px; }
+    .header-info { text-align: left; }
+    .header-date { font-size: 14px; color: #d4a550; font-weight: 700; }
+    .header-count { font-size: 11px; color: #999; margin-top: 4px; }
+    .bulletin-title { text-align: center; padding: 10px; font-size: 16px; font-weight: 800; color: #d4a550; background: #150f03; border-bottom: 1px solid #3a2e10; letter-spacing: 1px; }
+    table { width: 100%; border-collapse: collapse; }
+    thead tr { background: #1e1606; border-bottom: 2px solid #d4a550; }
+    thead th { padding: 7px 8px; font-size: 11px; font-weight: 800; color: #d4a550; text-align: center; }
+    thead th:nth-child(2) { text-align: right; }
+    tbody tr { border-bottom: 1px solid #2a2010; }
+    tbody tr:hover { background: #201808 !important; }
+    .footer { margin-top: 12px; text-align: center; font-size: 9px; color: #555; border-top: 1px solid #2a2010; padding-top: 8px; }
+    @media print {
+      body { background: #fff !important; color: #000 !important; }
+      .header { background: #f5f0e0 !important; border-color: #8a6a10 !important; }
+      .brand-title { color: #7a5a10 !important; }
+      .brand-sub, .header-count { color: #444 !important; }
+      .header-date { color: #7a5a10 !important; }
+      .bulletin-title { background: #f0ead0 !important; color: #7a5a10 !important; border-color: #c0a040 !important; }
+      thead tr { background: #e8e0c0 !important; }
+      thead th { color: #6a4a08 !important; }
+      tbody tr { border-color: #e0d8c0 !important; }
+      tbody tr:nth-child(even) { background: #f8f4e8 !important; }
+      tbody tr:nth-child(odd) { background: #fff !important; }
+      td { color: #111 !important; }
+      td:nth-child(4), td:nth-child(6) { color: #5a3a08 !important; }
+      .footer { color: #888 !important; border-color: #ccc !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">
+      <div>
+        <div class="brand-title">OZK TOBACCO</div>
+        <div class="brand-sub">ozk.kh@outlook.com</div>
+      </div>
+    </div>
+    <div class="header-info">
+      <div class="header-date">${today}</div>
+      <div class="header-count">${items.length} مادة</div>
+    </div>
+  </div>
+  <div class="bulletin-title">نشرة الأسعار اليومية</div>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th style="text-align:right">اسم المادة</th>
+        <th>الوحدة الكبيرة</th>
+        <th>سعر الكبيرة</th>
+        <th>الوحدة الصغيرة</th>
+        <th>سعر الصغيرة</th>
+        <th>الكمية</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="footer">OZK Tobacco | نشرة الأسعار | ${today} | ${items.length} مادة</div>
+  <script>window.onload = function() { window.print(); };<\/script>
+</body>
+</html>`;
+
+  const win = window.open("", "_blank");
+  if (!win) {
+    setNotice("error", "تعذر فتح نافذة الطباعة. افتح من المتصفح مباشرة.");
     render();
     return;
   }
-
-  const { jsPDF } = window.jspdf || window;
-  const today = todayIsoDate();
-
-  // Page setup: A4 landscape for more columns space
-  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-
-  const pageW = doc.internal.pageSize.getWidth();
-  const pageH = doc.internal.pageSize.getHeight();
-  const margin = 10;
-  const colW = (pageW - margin * 2) / 5; // 5 columns
-
-  // ─── Header / Title ───
-  doc.setFillColor(12, 10, 5);
-  doc.rect(0, 0, pageW, 22, "F");
-
-  doc.setTextColor(212, 165, 80); // gold
-  doc.setFontSize(18);
-  doc.setFont("helvetica", "bold");
-  doc.text("OZK TOBACCO", pageW / 2, 10, { align: "center" });
-
-  doc.setFontSize(11);
-  doc.setTextColor(230, 220, 200);
-  doc.text("\u0646\u0634\u0631\u0629 \u0627\u0644\u0623\u0633\u0639\u0627\u0631 - Price Bulletin", pageW / 2, 17, { align: "center" });
-
-  // Date on right side
-  doc.setFontSize(9);
-  doc.setTextColor(180, 170, 150);
-  doc.text(today, pageW - margin, 17, { align: "right" });
-
-  let y = 27;
-
-  // ─── Column headers ───
-  const colHeaders = ["Item Name", "Unit2 Price", "Unit2", "Unit1 Price", "Unit1"];
-  const colAligns = ["left", "right", "center", "right", "center"];
-
-  doc.setFillColor(40, 35, 25);
-  doc.rect(margin, y - 4, pageW - margin * 2, 8, "F");
-  doc.setTextColor(212, 165, 80);
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "bold");
-  colHeaders.forEach((h, i) => {
-    const x = margin + i * colW + (colAligns[i] === "right" ? colW - 2 : colAligns[i] === "center" ? colW / 2 : 2);
-    doc.text(h, x, y, { align: colAligns[i] });
-  });
-
-  y += 6;
-
-  // ─── Rows ───
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
-
-  items.forEach((item, idx) => {
-    if (y > pageH - 15) {
-      doc.addPage();
-      y = 15;
-      // Repeat header on new page
-      doc.setFillColor(40, 35, 25);
-      doc.rect(margin, y - 4, pageW - margin * 2, 8, "F");
-      doc.setTextColor(212, 165, 80);
-      doc.setFontSize(8);
-      doc.setFont("helvetica", "bold");
-      colHeaders.forEach((h, i) => {
-        const x = margin + i * colW + (colAligns[i] === "right" ? colW - 2 : colAligns[i] === "center" ? colW / 2 : 2);
-        doc.text(h, x, y, { align: colAligns[i] });
-      });
-      y += 6;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.5);
-    }
-
-    const isEven = idx % 2 === 0;
-    if (isEven) {
-      doc.setFillColor(25, 22, 14);
-      doc.rect(margin, y - 3.5, pageW - margin * 2, 6, "F");
-    }
-
-    doc.setTextColor(220, 210, 190);
-
-    const unit2Price = Number(item.unit2Price || 0);
-    const unit1Price = itemUnit1PriceFromSecondUnit ? itemUnit1PriceFromSecondUnit(item) : Number(item.salePrice || item.unit1Price || 0);
-    const unit2Name = item.unit2Name || item.unit1Name || "";
-    const unit1Name = item.unit1Name || "";
-    const itemName = String(item.itemName || "").slice(0, 40);
-
-    const rowData = [
-      [itemName, margin + 2, "left"],
-      [unit2Price > 0 ? unit2Price.toFixed(2) : "-", margin + colW - 2, "right"],
-      [unit2Name, margin + colW * 1.5, "center"],
-      [unit1Price > 0 ? unit1Price.toFixed(2) : "-", margin + colW * 2 + colW - 2, "right"],
-      [unit1Name, margin + colW * 3.5, "center"]
-    ];
-
-    rowData.forEach(([val, x, align]) => {
-      doc.text(String(val), x, y, { align });
-    });
-
-    y += 6;
-  });
-
-  // ─── Footer ───
-  const totalPages = doc.internal.getNumberOfPages();
-  for (let p = 1; p <= totalPages; p++) {
-    doc.setPage(p);
-    doc.setFontSize(7);
-    doc.setTextColor(120, 110, 90);
-    doc.text(`Page ${p} of ${totalPages}  |  OZK Tobacco  |  ${today}`, pageW / 2, pageH - 4, { align: "center" });
-    doc.text(`${items.length} items`, margin, pageH - 4, { align: "left" });
-  }
-
-  doc.save(`ozk-customer-prices-${today}.pdf`);
-  setNotice("success", `تم تنزيل نشرة الأسعار PDF: ${items.length} مادة.`);
+  win.document.write(html);
+  win.document.close();
+  setNotice("success", `تم فتح نشرة الأسعار PDF للطباعة: ${items.length} مادة. اختر 'حفظ كـ PDF' من نافذة الطباعة.`);
   render();
 }
 function approvedPriceMap() {
