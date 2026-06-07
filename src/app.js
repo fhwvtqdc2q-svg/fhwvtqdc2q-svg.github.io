@@ -815,6 +815,10 @@ function downloadApprovedPricesForAccounting() {
 
   assertExcelSupport();
 
+  const today = todayIsoDate();
+
+  const titleRow = ["نشرة الأسعار - OZK Tobacco", today, "", "", "", "", "", "", ""];
+
   const headers = [
     "اسم المادة",
     "سعر الوحدة الثانية",
@@ -839,7 +843,7 @@ function downloadApprovedPricesForAccounting() {
     item.approvedAt || item.updatedAt || ""
   ]);
 
-  const worksheet = window.XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  const worksheet = window.XLSX.utils.aoa_to_sheet([titleRow, headers, ...rows]);
 
   worksheet["!cols"] = [
     { wch: 35 },
@@ -855,7 +859,7 @@ function downloadApprovedPricesForAccounting() {
 
   const workbook = window.XLSX.utils.book_new();
   window.XLSX.utils.book_append_sheet(workbook, worksheet, "أسعار العملاء");
-  window.XLSX.writeFile(workbook, `ozk-customer-prices-${todayIsoDate()}.xlsx`);
+  window.XLSX.writeFile(workbook, `ozk-customer-prices-${today}.xlsx`);
   setNotice("success", `تم تنزيل نشرة الأسعار: ${items.length} مادة.`);
   render();
 }
@@ -1797,7 +1801,7 @@ function pricing() {
       <div class="button-row report-actions">
         <button class="button secondary" type="button" data-action="download-daily-pricing" ${items.length ? "" : "disabled"}>تنزيل قائمة تسعير اليوم</button>
         <button class="button secondary" type="button" data-action="download-price-template" ${allAvailable.length ? "" : "disabled"}>تنزيل قالب Excel</button>
-        <button class="button secondary" type="button" data-action="download-approved-prices" ${state.approvedPriceItems.length ? "" : "disabled"}>تصدير أسعار المحاسبة</button>
+        <button class="button secondary" type="button" data-action="download-approved-prices" ${state.approvedPriceItems.length ? "" : "disabled"}>تنزيل نشرة الأسعار</button>
       </div>
       <form class="form-card compact" data-form="live-price-import">
         <label>
@@ -2036,7 +2040,7 @@ function ameen() {
           <div class="button-row">
             <button class="button secondary" type="button" data-action="download-price-template" ${liveReport && summary.availableItems ? "" : "disabled"}>تنزيل قالب تسعير من الموقع</button>
             <button class="button primary" type="submit" ${liveReport && summary.availableItems ? "" : "disabled"}>استيراد الأسعار وحذف غير الموجود</button>
-            <button class="button secondary" type="button" data-action="download-approved-prices" ${approvedPrices.length ? "" : "disabled"}>تصدير أسعار المحاسبة</button>
+            <button class="button secondary" type="button" data-action="download-approved-prices" ${approvedPrices.length ? "" : "disabled"}>تنزيل نشرة الأسعار</button>
           </div>
         </form>
       </article>
